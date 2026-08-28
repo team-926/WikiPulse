@@ -1,0 +1,19 @@
+# 환경 변수
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 로그 / 임시
+*.log
+logs/
+tmp/
