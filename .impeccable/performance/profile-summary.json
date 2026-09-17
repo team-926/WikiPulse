@@ -1,0 +1,316 @@
+{
+  "top": [
+    {
+      "ms": 4891.288,
+      "functionName": "(program)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 126.016,
+      "functionName": "(idle)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 83.199,
+      "functionName": "(garbage collector)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 54.28,
+      "functionName": "Fd",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 7840
+    },
+    {
+      "ms": 50.173,
+      "functionName": "setAttribute",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 41.285,
+      "functionName": "Fd",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 7840
+    },
+    {
+      "ms": 30.867,
+      "functionName": "h",
+      "scriptId": "7",
+      "url": "http://127.0.0.1:5188/assets/PulsePage-Cr53G3Xb.js",
+      "lineNumber": 0,
+      "columnNumber": 4769
+    },
+    {
+      "ms": 28.658,
+      "functionName": "",
+      "scriptId": "7",
+      "url": "http://127.0.0.1:5188/assets/PulsePage-Cr53G3Xb.js",
+      "lineNumber": 0,
+      "columnNumber": 11804
+    },
+    {
+      "ms": 24.806,
+      "functionName": "",
+      "scriptId": "7",
+      "url": "http://127.0.0.1:5188/assets/PulsePage-Cr53G3Xb.js",
+      "lineNumber": 0,
+      "columnNumber": 14819
+    },
+    {
+      "ms": 22.48,
+      "functionName": "setAttribute",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 18.964,
+      "functionName": "$",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 70
+    },
+    {
+      "ms": 17.686,
+      "functionName": "Ud",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 11681
+    },
+    {
+      "ms": 16.965,
+      "functionName": "setProperty",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 16.686,
+      "functionName": "",
+      "scriptId": "52",
+      "url": "",
+      "lineNumber": 5,
+      "columnNumber": 51
+    },
+    {
+      "ms": 15.328,
+      "functionName": "Mu",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 115478
+    },
+    {
+      "ms": 12.923,
+      "functionName": "yl",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 99747
+    },
+    {
+      "ms": 12.168,
+      "functionName": "oa",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 33931
+    },
+    {
+      "ms": 11.257,
+      "functionName": "r",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 39563
+    },
+    {
+      "ms": 10.709,
+      "functionName": "Qc",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 92959
+    },
+    {
+      "ms": 10.609,
+      "functionName": "Qc",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 92959
+    },
+    {
+      "ms": 10.49,
+      "functionName": "",
+      "scriptId": "7",
+      "url": "http://127.0.0.1:5188/assets/PulsePage-Cr53G3Xb.js",
+      "lineNumber": 0,
+      "columnNumber": 3142
+    },
+    {
+      "ms": 9.742,
+      "functionName": "h",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 40385
+    },
+    {
+      "ms": 9.643,
+      "functionName": "bi",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 28095
+    },
+    {
+      "ms": 9.372,
+      "functionName": "",
+      "scriptId": "7",
+      "url": "http://127.0.0.1:5188/assets/PulsePage-Cr53G3Xb.js",
+      "lineNumber": 0,
+      "columnNumber": 14233
+    },
+    {
+      "ms": 9.263,
+      "functionName": "bi",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 28095
+    },
+    {
+      "ms": 9.212,
+      "functionName": "rn",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 10347
+    },
+    {
+      "ms": 9.162,
+      "functionName": "ku",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 114553
+    },
+    {
+      "ms": 8.309,
+      "functionName": "Ic",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 79634
+    },
+    {
+      "ms": 7.964,
+      "functionName": "setProperty",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 7.656,
+      "functionName": "Rt",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 5374
+    },
+    {
+      "ms": 7.591,
+      "functionName": "sl",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 94375
+    },
+    {
+      "ms": 6.346,
+      "functionName": "Fd",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 7840
+    },
+    {
+      "ms": 6.319,
+      "functionName": "Fd",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 9,
+      "columnNumber": 7840
+    },
+    {
+      "ms": 6.26,
+      "functionName": "an",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 10599
+    },
+    {
+      "ms": 6.256,
+      "functionName": "an",
+      "scriptId": "5",
+      "url": "http://127.0.0.1:5188/assets/index-6s1Vrgx6.js",
+      "lineNumber": 8,
+      "columnNumber": 10599
+    }
+  ],
+  "mutations": {
+    "pulse-scan__wave:r": 142,
+    "pulse-scan__echo:r": 142,
+    "document-cluster__heading:style": 5760,
+    "line:style": 7970,
+    "document-node:style": 8978,
+    "document-cluster__title-glow:x": 4752,
+    "document-cluster__title-glow:y": 4752,
+    "document-cluster__title-glow:width": 4752,
+    "document-cluster__title-glow:height": 4752,
+    "document-cluster__title-glow:rx": 4752,
+    "document-cluster__title-box:x": 4752,
+    "document-cluster__title-box:y": 4752,
+    "document-cluster__title-box:width": 4752,
+    "document-cluster__title-box:height": 4752,
+    "document-cluster__title-box:rx": 4752,
+    "document-cluster__title-shine:x": 4752,
+    "document-cluster__title-shine:y": 4752,
+    "document-cluster__title-shine:width": 4752,
+    "document-cluster__title-shine:height": 4752,
+    "document-cluster__title-shine:rx": 4752,
+    "document-cluster__title:style": 9504,
+    "document-cluster__title:y": 4752,
+    "document-cluster__heading:data-scan-y": 4752,
+    "tspan:dy": 132,
+    "g:style": 132,
+    "pulse-map document-map:data-zoom": 132,
+    "document-node-label__text:style": 17075,
+    "pulse-scan__wave:style": 36,
+    "pulse-scan__echo:style": 36
+  },
+  "zoomCommits": 132
+}
