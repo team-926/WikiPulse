@@ -1,0 +1,158 @@
+{
+  "top": [
+    {
+      "ms": 3861.14,
+      "functionName": "(program)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 439.052,
+      "functionName": "(idle)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 29.345,
+      "functionName": "",
+      "scriptId": "8",
+      "url": "http://127.0.0.1:5189/assets/PulsePage-YgAuTiPg.js",
+      "lineNumber": 0,
+      "columnNumber": 11177
+    },
+    {
+      "ms": 21.879,
+      "functionName": "(garbage collector)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 8.501,
+      "functionName": "b",
+      "scriptId": "8",
+      "url": "http://127.0.0.1:5189/assets/PulsePage-YgAuTiPg.js",
+      "lineNumber": 0,
+      "columnNumber": 14663
+    },
+    {
+      "ms": 4.74,
+      "functionName": "setAttribute",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 2.25,
+      "functionName": "setProperty",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 1.857,
+      "functionName": "Fd",
+      "scriptId": "4",
+      "url": "http://127.0.0.1:5189/assets/index-Yok17-AK.js",
+      "lineNumber": 9,
+      "columnNumber": 7840
+    },
+    {
+      "ms": 1.833,
+      "functionName": "Fu",
+      "scriptId": "4",
+      "url": "http://127.0.0.1:5189/assets/index-Yok17-AK.js",
+      "lineNumber": 8,
+      "columnNumber": 116210
+    },
+    {
+      "ms": 1.714,
+      "functionName": "setAttribute",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 1.564,
+      "functionName": "getScreenCTM",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 1.562,
+      "functionName": "n",
+      "scriptId": "8",
+      "url": "http://127.0.0.1:5189/assets/PulsePage-YgAuTiPg.js",
+      "lineNumber": 0,
+      "columnNumber": 3933
+    },
+    {
+      "ms": 1.562,
+      "functionName": "requestAnimationFrame",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1
+    },
+    {
+      "ms": 1.55,
+      "functionName": "r",
+      "scriptId": "4",
+      "url": "http://127.0.0.1:5189/assets/index-Yok17-AK.js",
+      "lineNumber": 9,
+      "columnNumber": 39563
+    },
+    {
+      "ms": 1.268,
+      "functionName": "",
+      "scriptId": "8",
+      "url": "http://127.0.0.1:5189/assets/PulsePage-YgAuTiPg.js",
+      "lineNumber": 0,
+      "columnNumber": 3047
+    },
+    {
+      "ms": 1.095,
+      "functionName": "",
+      "scriptId": "8",
+      "url": "http://127.0.0.1:5189/assets/PulsePage-YgAuTiPg.js",
+      "lineNumber": 0,
+      "columnNumber": 12894
+    },
+    {
+      "ms": 0.55,
+      "functionName": "an",
+      "scriptId": "4",
+      "url": "http://127.0.0.1:5189/assets/index-Yok17-AK.js",
+      "lineNumber": 8,
+      "columnNumber": 10599
+    }
+  ],
+  "mutations": {
+    "pulse-scan__wave:r": 108,
+    "pulse-scan__echo:r": 108,
+    "document-node:style": 1864,
+    "line:style": 1658,
+    "document-cluster__heading:style": 213,
+    "pulse-map document-map:data-zoom": 168,
+    "svg:data-rendered-clusters": 167,
+    "g:style": 165,
+    "document-cluster__heading:transform": 1867,
+    "document-cluster__heading:data-scan-y": 1851,
+    "document-cluster:style": 56,
+    "document-cluster:data-rendered": 56,
+    "document-node-label__text:style": 6654,
+    "pulse-scan__wave:style": 23,
+    "pulse-scan__echo:style": 23
+  },
+  "zoomCommits": 168
+}
