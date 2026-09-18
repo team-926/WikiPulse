@@ -1,0 +1,207 @@
+# WikiPulse CI/CD
+#
+# 러너 (둘 다 EC2 1번 = 서비스 서버)
+#   ec2-docker : docker executor. image 로 툴체인을 가져와 호스트를 안 건드린다.
+#   ec2-shell  : shell executor. 호스트에서 직접 실행 — 배포 전용.
+ 
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - when: never
+ 
+stages: [test, build, deploy]
+ 
+default:
+  tags: [ec2-docker]
+  interruptible: true
+ 
+variables:
+  GIT_DEPTH: "20"
+ 
+# ---------------------------------------------------------------- 경로 묶음
+# . 로 시작하면 잡이 아니라 재사용용 조각이다.
+# ⚠️ 폴더만 보고 자르면 안 된다 — db/migrations 가 바뀌면 backend 도 검증해야 한다
+#    (ddl-auto: validate). 안 그러면 조용히 안 도는 테스트가 생긴다.
+.paths_backend: &paths_backend
+  - backend/**/*
+  - db/migrations/**/*
+  - .gitlab-ci.yml
+ 
+.paths_db: &paths_db
+  - db/**/*
+  - .gitlab-ci.yml
+ 
+.paths_pipeline: &paths_pipeline
+  - data-pipeline/**/*
+  - .gitlab-ci.yml
+ 
+.paths_frontend: &paths_frontend
+  - frontend/**/*
+  - .gitlab-ci.yml
+ 
+# ================================================================ test (MR 에서만)
+test:backend:
+  stage: test
+  image: eclipse-temurin:17-jdk
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_backend
+  variables:
+    # 🔴 GRADLE_USER_HOME 을 프로젝트 안으로 옮겨야 캐시에 담긴다.
+    #    기본값(~/.gradle)은 컨테이너와 함께 사라진다.
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  cache:
+    key:
+      files: [backend/build.gradle]
+    paths:
+      - .gradle/caches
+      - .gradle/wrapper
+  script:
+    - cd backend
+    - chmod +x gradlew
+    - ./gradlew test --no-daemon
+ 
+test:db:
+  stage: test
+  image: python:3.11-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_db
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key:
+      files: [db/requirements-test.txt]
+    paths: [.pip]
+  script:
+    # pgserver 가 PostgreSQL 을 번들로 띄운다 — 별도 DB 서비스가 필요 없다.
+    # migrations/V*.sql 을 버전 순서대로 적재하므로 마이그레이션 자체를 검증한다.
+    - pip install -r db/requirements-test.txt
+    - cd db
+    - pytest -q
+ 
+test:pipeline:
+  stage: test
+  image: python:3.11-slim          # 🔴 3.12+ 에서는 PySpark 3.5 워커가 죽는다
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_pipeline
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key: pipeline-pip
+    paths: [.pip]
+  script:
+    # ⚠️ psycopg·pyspark 를 일부러 설치하지 않는다. 테스트들이 importorskip 으로
+    #    걸려 있어 DB·Spark 가 필요한 파일은 자동으로 건너뛴다. 그것까지 돌리려면
+    #    잡 안에 실 PostgreSQL 이 필요하다 — 별도 과제로 남긴다.
+    - pip install pytest==8.3.4 requests==2.32.3
+    - cd data-pipeline
+    - pytest -q
+    - cd batch && pytest -q && cd ..
+    - cd gdelt && pytest -q && cd ..
+ 
+test:frontend:
+  stage: test
+  image: node:20-alpine
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_frontend
+  variables:
+    # npm ci 는 node_modules 를 지우고 시작하므로 그걸 캐시해도 소용없다.
+    # 다운로드 캐시를 담아야 --prefer-offline 이 먹는다.
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.npm]
+  script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit --fund=false
+    - npm run lint
+    - npm run test:data
+ 
+# ================================================================ build (develop)
+build:frontend:
+  stage: build
+  image: node:20-alpine
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_frontend
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+    # 🔴 VITE_* 는 빌드 시점에 번들에 박힌다. 실행 시점에 못 바꾼다.
+    #    여기서 빠뜨리면 mock 데이터로 빌드돼 화면이 조용히 가짜가 된다.
+    VITE_DATA_SOURCE: api
+    VITE_API_BASE_URL: /api/v1
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.npm]
+  script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit --fund=false
+    - npm run build
+  artifacts:
+    paths: [frontend/dist]
+    expire_in: 1 week
+ 
+# ================================================================ deploy (develop, 자동)
+# 🔴 tags: [ec2-shell] — 호스트에서 실행돼야 파일을 놓고 compose 를 띄울 수 있다.
+#    docker 러너로 가면 컨테이너 안이라 /home/ubuntu 가 아예 없다.
+# 🔴 interruptible: false — 배포 중간에 끊기면 반쯤 바뀐 상태로 남는다.
+# 🔴 resource_group — MR 두 개가 연달아 머지될 때 배포가 겹치지 않게 큐에 세운다.
+deploy:frontend:
+  stage: deploy
+  tags: [ec2-shell]
+  interruptible: false
+  resource_group: production
+  needs:
+    - job: build:frontend
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_frontend
+  variables:
+    TARGET: /home/ubuntu/infra/service/frontend/dist
+  script:
+    # ⚠️ TARGET 이 비면 rm -rf /* 가 된다. 존재부터 확인한다.
+    - test -d "$TARGET"
+    # 직전 버전을 남긴다. 롤백: rm -rf dist/* && cp -r dist.prev/. dist/
+    - rm -rf "$TARGET.prev" && cp -r "$TARGET" "$TARGET.prev" || true
+    - rm -rf "$TARGET"/*
+    # ⚠️ cp -a 는 -p 를 포함해 대상 폴더의 타임스탬프까지 바꾸려다 권한 오류가 난다.
+    #    정적 파일이라 속성 보존이 필요 없다.
+    - cp -r frontend/dist/. "$TARGET"/
+    - ls -la "$TARGET" | head
+  environment:
+    name: production
+    url: https://wikipulse.example.com
+ 
+deploy:backend:
+  stage: deploy
+  tags: [ec2-shell]
+  interruptible: false
+  resource_group: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_backend
+  script:
+    # ⚠️ 마이그레이션 도구(Flyway)가 없어서 스키마 적용은 수동이다.
+    #    스키마가 먼저 안 들어가 있으면 ddl-auto: validate 에서 기동이 실패한다.
+    - |
+      if git diff --name-only "$CI_COMMIT_BEFORE_SHA" "$CI_COMMIT_SHA" -- db/migrations | grep -q .; then
+        echo "⚠️ 이 배포에 마이그레이션 변경이 포함돼 있다. DB 적용 여부를 확인할 것."
+      fi
+    # backend/Dockerfile 이 안에서 gradle 빌드까지 한다 — 별도 아티팩트가 필요 없다.
+    - docker build -t wikipulse-backend:$CI_COMMIT_SHORT_SHA -f backend/Dockerfile backend
+    - cd /home/ubuntu/infra/service
+    - BACKEND_IMAGE=wikipulse-backend:$CI_COMMIT_SHORT_SHA docker compose up -d backend
+    - sleep 20
+    - docker compose ps
+    # ddl-auto: validate 통과 여부 = 기동 성공 여부. 여기서 실패하면 스키마 불일치다.
+    - docker run --rm --network wikipulse-net curlimages/curl:latest -sf http://backend:8080/actuator/health
+  environment:
+    name: production
+    url: https://wikipulse.example.com
