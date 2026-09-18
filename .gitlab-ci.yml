@@ -1,16 +1,62 @@
-# 러너 태그
-#   ec2-docker : docker executor. image 로 툴체인을 가져오므로 호스트에는 아무것도 설치되지 않는다.
-#   ec2-shell  : shell executor. 배포용 — 아직 안 쓴다.
+# WikiPulse CI/CD
+#
+# 러너
+#   ec2-docker : docker executor. image 로 툴체인을 가져와 호스트를 안 건드린다.
+#   ec2-shell  : shell executor. 배포 전용. GitLab 에서 Protected 로 표시한다.
+#
+# 부하 관리 (러너가 서비스 서버인 EC2 1번에 있다 — t3 버스트 크레딧)
+#   - 경로 필터: 바뀐 모듈만 검사
+#   - 캐시: 의존성 재다운로드가 실제 테스트보다 비싸다
+#   - interruptible: 연속 푸시 시 앞 파이프라인 자동 취소
+#   - workflow: MR 파이프라인과 브랜치 파이프라인 중복 실행 방지
 
-stages:
-  - test
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never                      # MR 이 열려 있으면 브랜치 파이프라인은 안 돈다
+    - if: '$CI_COMMIT_BRANCH'
+
+stages: [test, build, deploy]
 
 default:
   tags: [ec2-docker]
+  interruptible: true                  # 새 푸시가 오면 진행 중인 잡을 취소
 
+variables:
+  GIT_DEPTH: "20"                      # 얕은 클론
+
+.paths_backend: &paths_backend
+  - backend/**/*
+  - db/migrations/**/*                 # ddl-auto: validate 가 스키마와 맞물린다
+  - .gitlab-ci.yml
+.paths_db: &paths_db
+  - db/**/*
+  - .gitlab-ci.yml
+.paths_pipeline: &paths_pipeline
+  - data-pipeline/**/*
+  - .gitlab-ci.yml
+.paths_frontend: &paths_frontend
+  - frontend/**/*
+  - .gitlab-ci.yml
+
+# ============================================================ test
 test:backend:
   stage: test
   image: eclipse-temurin:17-jdk
+  rules:
+    - changes: *paths_backend
+  variables:
+    # 🔴 GRADLE_USER_HOME 을 프로젝트 안으로 옮겨야 캐시에 담긴다.
+    #    기본값(~/.gradle)은 컨테이너와 함께 사라진다.
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  cache:
+    key:
+      files: [backend/build.gradle]    # 의존성이 바뀔 때만 캐시 키가 바뀐다
+    paths:
+      - .gradle/caches
+      - .gradle/wrapper
   script:
     - cd backend
     - chmod +x gradlew
@@ -18,18 +64,34 @@ test:backend:
 
 test:db:
   stage: test
-  image: python:3.11
+  image: python:3.11-slim
+  rules:
+    - changes: *paths_db
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key:
+      files: [db/requirements-test.txt]
+    paths: [.pip]
   script:
     # pgserver 가 PostgreSQL 을 번들로 띄운다 — 별도 DB 서비스가 필요 없다.
-    # migrations/V*.sql 을 버전 순서대로 적재하므로 마이그레이션 자체를 검증한다.
     - pip install -r db/requirements-test.txt
     - cd db
     - pytest -q
 
 test:pipeline:
   stage: test
-  image: python:3.11        # 🔴 3.12+ 에서는 PySpark 3.5 워커가 죽는다
+  image: python:3.11-slim              # 🔴 3.12+ 에서는 PySpark 3.5 워커가 죽는다
+  rules:
+    - changes: *paths_pipeline
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key: pipeline-pip
+    paths: [.pip]
   script:
+    # ⚠️ psycopg·pyspark 를 일부러 설치하지 않는다 — importorskip 으로
+    #    DB·Spark 가 필요한 파일이 자동으로 건너뛰어진다.
     - pip install pytest==8.3.4 requests==2.32.3
     - cd data-pipeline
     - pytest -q
@@ -39,8 +101,85 @@ test:pipeline:
 test:frontend:
   stage: test
   image: node:20-alpine
+  rules:
+    - changes: *paths_frontend
+  variables:
+    # npm ci 는 node_modules 를 지우고 시작하므로 그걸 캐시해도 소용없다.
+    # 다운로드 캐시를 담아야 --prefer-offline 이 먹는다.
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.npm]
   script:
     - cd frontend
-    - npm ci
+    - npm ci --prefer-offline --no-audit --fund=false
     - npm run lint
     - npm run test:data
+
+# ============================================================ build
+build:frontend:
+  stage: build
+  image: node:20-alpine
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_frontend
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+    # 🔴 VITE_* 는 빌드 시점에 번들에 박힌다. 실행 시점에 못 바꾼다.
+    VITE_DATA_SOURCE: api
+    VITE_API_BASE_URL: /api/v1
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.npm]
+  script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit --fund=false
+    - npm run build
+  artifacts:
+    paths: [frontend/dist]
+    expire_in: 1 week
+
+# ============================================================ deploy (수동)
+deploy:frontend:
+  stage: deploy
+  tags: [ec2-shell]
+  interruptible: false                 # 🔴 배포는 중간에 끊기면 안 된다
+  needs:
+    - job: build:frontend
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_frontend
+      when: manual
+  variables:
+    TARGET: /home/ubuntu/infra/service/frontend/dist
+  script:
+    - test -d "$TARGET"                # ⚠️ 비면 rm -rf /* 가 된다
+    - rm -rf "$TARGET"/*
+    - cp -a frontend/dist/. "$TARGET"/
+    - ls -la "$TARGET" | head
+  environment:
+    name: production
+    url: https://wikipulse.example.com
+
+deploy:backend:
+  stage: deploy
+  tags: [ec2-shell]
+  interruptible: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_backend
+      when: manual
+  script:
+    - docker build -t wikipulse-backend:$CI_COMMIT_SHORT_SHA -f backend/Dockerfile backend
+    - cd /home/ubuntu/infra/service
+    - BACKEND_IMAGE=wikipulse-backend:$CI_COMMIT_SHORT_SHA docker compose up -d backend
+    - sleep 20
+    - docker compose ps
+    # ddl-auto: validate 통과 여부 = 기동 성공 여부
+    - docker run --rm --network wikipulse-net curlimages/curl:latest -sf http://backend:8080/actuator/health
+  environment:
+    name: production
+    url: https://wikipulse.example.com
