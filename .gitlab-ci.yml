@@ -158,7 +158,7 @@ deploy:frontend:
   script:
     - test -d "$TARGET"                # ⚠️ 비면 rm -rf /* 가 된다
     - rm -rf "$TARGET"/*
-    - cp -a frontend/dist/. "$TARGET"/
+    - cp -r frontend/dist/. "$TARGET"/
     - ls -la "$TARGET" | head
   environment:
     name: production
