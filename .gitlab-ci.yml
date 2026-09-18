@@ -98,6 +98,23 @@ test:pipeline:
     - cd batch && pytest -q && cd ..
     - cd gdelt && pytest -q && cd ..
 
+test:pipeline-spark:
+  stage: test
+  image: python:3.11-slim-bookworm
+  rules:
+    - changes: *paths_pipeline
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key: pipeline-spark-pip
+    paths: [.pip]
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless
+  script:
+    - pip install pytest==8.3.4 pyspark==3.5.3
+    - cd data-pipeline
+    - pytest -q tests/test_edit_windows.py::test_live_pipeline_does_not_crash_when_planning_second_micro_batch
+
 test:frontend:
   stage: test
   image: node:20-alpine
