@@ -1,0 +1,46 @@
+# 러너 태그
+#   ec2-docker : docker executor. image 로 툴체인을 가져오므로 호스트에는 아무것도 설치되지 않는다.
+#   ec2-shell  : shell executor. 배포용 — 아직 안 쓴다.
+
+stages:
+  - test
+
+default:
+  tags: [ec2-docker]
+
+test:backend:
+  stage: test
+  image: eclipse-temurin:17-jdk
+  script:
+    - cd backend
+    - chmod +x gradlew
+    - ./gradlew test --no-daemon
+
+test:db:
+  stage: test
+  image: python:3.11
+  script:
+    # pgserver 가 PostgreSQL 을 번들로 띄운다 — 별도 DB 서비스가 필요 없다.
+    # migrations/V*.sql 을 버전 순서대로 적재하므로 마이그레이션 자체를 검증한다.
+    - pip install -r db/requirements-test.txt
+    - cd db
+    - pytest -q
+
+test:pipeline:
+  stage: test
+  image: python:3.11        # 🔴 3.12+ 에서는 PySpark 3.5 워커가 죽는다
+  script:
+    - pip install pytest==8.3.4 requests==2.32.3
+    - cd data-pipeline
+    - pytest -q
+    - cd batch && pytest -q && cd ..
+    - cd gdelt && pytest -q && cd ..
+
+test:frontend:
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint
+    - npm run test:data
