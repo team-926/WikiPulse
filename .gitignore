@@ -1,3 +1,6 @@
+# 기능 구현 격리용 git worktree
+.worktrees/
+
 # 환경 변수
 .env
 .env.*
