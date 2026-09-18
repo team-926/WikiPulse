@@ -454,7 +454,7 @@ services:
       WATERMARK: 10 minutes
       TRIGGER_INTERVAL: 30 seconds
       SHUFFLE_PARTITIONS: "8"
-      CHECKPOINT_DIR: hdfs:///wikipulse/checkpoints/edit-windows-v1
+      CHECKPOINT_DIR: hdfs://10.0.0.11:8020/wikipulse/checkpoints/edit-windows-v1
       SINK: console
     volumes:
       - ${SPARK_INFRA_DIR:-/home/ubuntu/infra/spark}/conf:/opt/spark/conf:ro
