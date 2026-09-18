@@ -126,19 +126,22 @@ test:pipeline:
     # ⚠️ pyspark 는 여전히 안 깐다 — 300 MB + JVM 이라 t3 버스트 러너에 무겁다.
     #    Spark 가 필요한 파일(streaming 대조·baseline Spark)은 계속 건너뛴다.
     #    `-ra` 로 건너뛴 이유를 로그에 남겨, 안 도는 게 늘어나면 보이게 한다.
-    - pip install pytest==8.3.4 requests==2.32.3 "psycopg[binary]==3.3.5" pgserver==0.1.4
+    # pandas 는 stock 테스트가 쓴다 — 로컬 venv 에 우연히 있어서 안 보이던 의존성이다.
+    - pip install pytest==8.3.4 requests==2.32.3 "psycopg[binary]==3.3.5" pgserver==0.1.4 pandas==3.0.5
     # 스키마를 먼저 만든다. CI·배포가 같은 스크립트를 쓴다(db/apply_migrations.py).
     - python db/apply_migrations.py
     - cd data-pipeline
     - pytest -q -ra
     # 🔴 ~~루트·batch·gdelt 만 돌렸다~~ → spike·cluster·gkg·stock 이 빠져 있었다
     #    (WP-131). 2026-09-18 의 -127·-128·-129 변경 대부분이 그 두 곳이다.
-    - cd batch && pytest -q -ra && cd ..
-    - cd spike && pytest -q -ra && cd ..
-    - cd cluster && pytest -q -ra && cd ..
-    - cd gkg && pytest -q -ra && cd ..
-    - cd stock && pytest -q -ra && cd ..
-    - cd gdelt && pytest -q -ra && cd ..
+    # ⚠️ 서브셸로 들어간다. `cd X && ... && cd ..` 는 실패했을 때 `cd ..` 가 안 돌아서
+    #    다음 줄이 엉뚱한 디렉터리에서 실행된다 — 실제로 그렇게 오진했다(2026-09-18).
+    - (cd batch && pytest -q -ra)
+    - (cd spike && pytest -q -ra)
+    - (cd cluster && pytest -q -ra)
+    - (cd gkg && pytest -q -ra)
+    - (cd stock && pytest -q -ra)
+    - (cd gdelt && pytest -q -ra)
  
 test:frontend:
   stage: test
