@@ -631,6 +631,7 @@ Set only these values in `/home/ubuntu/infra/pipeline/.env`, then set mode `0600
 PIPELINE_APP_DIR=/home/ubuntu/infra/pipeline/app
 PIPELINE_STATE_DIR=/home/ubuntu/infra/pipeline/state
 PIPELINE_IVY_DIR=/home/ubuntu/infra/pipeline/ivy
+RESTART_POLICY=no
 SPARK_INFRA_DIR=/home/ubuntu/infra/spark
 DATA_SERVER_IP=10.0.0.11
 SPARK_MASTER=spark://10.0.0.11:7077
