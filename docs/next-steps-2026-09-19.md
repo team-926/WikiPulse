@@ -70,9 +70,20 @@ EC2 에서 바꿀 곳은 **두 군데이고 같이 바꾼다.**
    `streaming.live_spike` 와 `spike.runtime` 을 import 하므로 `/opt/app` 아래에 `spike/` 도
    있어야 한다. 콘솔 싱크는 이 파일 밖을 import 하지 않아서 여태 안 드러났다
    (`ensure_project_root_on_path` 주석, 2026-09-15 컨테이너 실측).
-3. ❓ **미확인 — 네트워크.** PostgreSQL 은 서비스 EC2 에 있고 `edit-stream` 은 데이터 EC2 에서
-   돈다. 사설망으로 5432 에 닿는지, UFW 가 막는지 확인한 적이 없다. **여기부터 확인하고
-   나서** 싱크를 바꾼다 — 안 닿으면 "어디서 적재할지"가 먼저 정해져야 한다.
+3. 🔴 **네트워크가 막혀 있다** — ~~미확인~~ → 실측 (2026-09-20, WP-143).
+   데이터 EC2 `10.0.0.11` → 서비스 EC2 `10.0.0.12:5432` 가 **UNREACHABLE** 이다.
+   같은 경로의 `:22` 는 열리므로 사설망 자체는 정상이다.
+
+   ⚠️ **원인이 UFW 만이 아니다.** `postgres-postgres-1` 의 `docker ps` 포트가 `5432/tcp`
+   뿐이라 **호스트에 게시된 포트가 없다** — 방화벽을 열어도 닿을 리스너가 없다. postgres 는
+   `wikipulse-net` 도커 네트워크 안에서만 보인다. 포트 게시와 UFW 규칙을 **둘 다** 해야 한다.
+
+   열어줄 출발지는 한 곳뿐이다. `spike` 싱크의 `foreachBatch` 는 executor 가 아니라
+   **드라이버에서 돌고**(`streaming/live_spike.py:158`), 드라이버는 데이터 EC2 에서만 돈다.
+   Spark worker 는 DB 에 안 붙는다.
+
+   인프라 담당(LYJ22) 몫이라 WP-143 으로 넘겼다. 그게 닫히기 전에는 `SINK=spike`
+   전환을 시도해도 드라이버가 기동에서 멈춘다.
 
 ### 1-3. 됐는지 보는 법
 
@@ -92,11 +103,15 @@ SELECT count(*), max(detected_at) FROM spike WHERE source = 'live';
 [로컬 파이프라인 최종 게이트](validation/2026-09-18-local-pipeline-gate.md)가 "데이터를 더
 실험할 단계가 아니라 없는 연결을 구현할 단계"로 판정했다. 그 넷이다.
 
+⚠️ `load_creation_dates` 의 `NotImplementedError` 는 **이미 배선돼 있었다**(WP-115).
+추가 씨드(생성일 근접 이웃, `is_seed=true`)는 돌고, 남은 건 비-seed 재급증뿐이다 —
+이 문서의 첫 판(2026-09-19)이 둘을 한 줄로 묶어 "전부 미구현"처럼 읽혔다.
+
 | 구멍 | 지금 상태 |
 | --- | --- |
-| `cluster/driver.py:load_creation_dates` | `NotImplementedError` — 추가 씨드·비-seed 재급증 미구현 |
+| 비-seed 재급증 멤버 편입 | 미구현 — `cluster/snapshot.py` 는 `is_seed=false` 자리를 비워 둔다 (WP-77 규칙) |
 | 클러스터 → GKG 테마·지역 술어 변환 | 정의 안 됨 (다운로드·파싱·lift·writer 단위 경로는 있음) |
-| 매칭·LLM 검증 워커 | 기본 OFF 이고 Compose 가 GMS·워커 환경변수를 backend 에 전달하지 않음 |
+| 매칭·LLM 검증 워커 | 기본 OFF. ~~Compose 가 환경변수를 전달하지 않음~~ → 전달됨 (2026-09-20, WP-142) |
 | 1일 E2E 수동 bridge 2개 + 시점 정합성 | 사람이 손으로 이어야 통과한다 |
 
 ## 3. 배포 — 지금은 정상, 대신 두 가지를 기억한다
