@@ -10,9 +10,21 @@
 
 ## 0. 상태 복구 (10분)
 
+저장소. **클론이 없는 PC면 먼저 받는다** — HTTPS 라 GitLab 계정으로 로그인한다.
+
+```
+git clone https://github.com/team-WikiPulse/WikiPulse.git
+cd WP
+```
+
+이미 있으면 갱신만 한다.
+
 ```
 git checkout develop && git pull --ff-only
 ```
+
+⚠️ **로컬에 남은 브랜치·stash 가 있는지 본다.** 다른 PC 에서 작업하다 온 것이면 여기에
+없다 — `git branch -vv` 와 `git stash list` 가 비어 있는 게 정상이다.
 
 서버는 읽기만 하는 확인이다.
 
