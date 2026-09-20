@@ -92,11 +92,15 @@ SELECT count(*), max(detected_at) FROM spike WHERE source = 'live';
 [로컬 파이프라인 최종 게이트](validation/2026-09-18-local-pipeline-gate.md)가 "데이터를 더
 실험할 단계가 아니라 없는 연결을 구현할 단계"로 판정했다. 그 넷이다.
 
+⚠️ `load_creation_dates` 의 `NotImplementedError` 는 **이미 배선돼 있었다**(WP-115).
+추가 씨드(생성일 근접 이웃, `is_seed=true`)는 돌고, 남은 건 비-seed 재급증뿐이다 —
+이 문서의 첫 판(2026-09-19)이 둘을 한 줄로 묶어 "전부 미구현"처럼 읽혔다.
+
 | 구멍 | 지금 상태 |
 | --- | --- |
-| `cluster/driver.py:load_creation_dates` | `NotImplementedError` — 추가 씨드·비-seed 재급증 미구현 |
+| 비-seed 재급증 멤버 편입 | 미구현 — `cluster/snapshot.py` 는 `is_seed=false` 자리를 비워 둔다 (WP-77 규칙) |
 | 클러스터 → GKG 테마·지역 술어 변환 | 정의 안 됨 (다운로드·파싱·lift·writer 단위 경로는 있음) |
-| 매칭·LLM 검증 워커 | 기본 OFF 이고 Compose 가 GMS·워커 환경변수를 backend 에 전달하지 않음 |
+| 매칭·LLM 검증 워커 | 기본 OFF. ~~Compose 가 환경변수를 전달하지 않음~~ → 전달됨 (2026-09-20, WP-142) |
 | 1일 E2E 수동 bridge 2개 + 시점 정합성 | 사람이 손으로 이어야 통과한다 |
 
 ## 3. 배포 — 지금은 정상, 대신 두 가지를 기억한다
