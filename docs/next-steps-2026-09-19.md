@@ -110,7 +110,7 @@ SELECT count(*), max(detected_at) FROM spike WHERE source = 'live';
 | 구멍 | 지금 상태 |
 | --- | --- |
 | 비-seed 재급증 멤버 편입 | 미구현 — `cluster/snapshot.py` 는 `is_seed=false` 자리를 비워 둔다 (WP-77 규칙) |
-| 클러스터 → GKG 테마·지역 술어 변환 | 정의 안 됨 (다운로드·파싱·lift·writer 단위 경로는 있음) |
+| ~~클러스터 → GKG 테마·지역 술어 변환~~ **해소** | `gkg/predicate.py` 가 `cluster_member` 제목에서 뽑는다 (2026-09-20, WP-148). 하루치 실측 검증 완료 — ⚠️ 단 `cluster_member` SQL·Spark 배선은 미검증 |
 | 매칭·LLM 검증 워커 | 기본 OFF. ~~Compose 가 환경변수를 전달하지 않음~~ → 전달됨 (2026-09-20, WP-142) |
 | 1일 E2E 수동 bridge 2개 + 시점 정합성 | 사람이 손으로 이어야 통과한다 |
 
