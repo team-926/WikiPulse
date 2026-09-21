@@ -26,6 +26,8 @@ variables:
 .paths_backend: &paths_backend
   - backend/**/*
   - db/migrations/**/*
+  # 🔴 compose 를 고쳤는데 배포가 안 돌면 서버는 옛 파일 그대로다 (WP-179).
+  - infra/service/compose.yaml
   - .gitlab-ci.yml
  
 .paths_db: &paths_db
@@ -295,7 +297,28 @@ deploy:backend:
     - bash infra/apply-migrations.sh
     # backend/Dockerfile 이 안에서 gradle 빌드까지 한다 — 별도 아티팩트가 필요 없다.
     - docker build -t wikipulse-backend:$CI_COMMIT_SHORT_SHA -f backend/Dockerfile backend
+    # 🔴 저장소가 compose 의 정본이다 (WP-179). 배포는 서버 파일을 쓰는데
+    #    동기화 수단이 없어서 조용히 낡는다 — 2026-09-21 에 서버 31줄 / 저장소 51줄이었고
+    #    -165·-172·-176 변수가 통째로 빠져 있었다. 기본값이 우연히 같아 아무도 몰랐다.
+    #    ⚠️ 기본값이 다른 노브였다면(예: -168 의 *_SOURCE) `.env` 에 값을 넣어도
+    #       에러 없이 무시된다. 그 유형은 사람이 알아채는 경로가 없다.
+    # ⚠️ 서버에만 있던 손수정은 덮인다. 그게 의도지만 **diff 로 드러나야** 한다 —
+    #    안 보이면 이 단계가 또 다른 조용한 실패가 된다.
+    # 🔴 cp 가 아니라 `cat >` 다. 기존 inode 에 써 넣어 소유권·권한이 남는다(-178 실측).
+    - |
+      SERVER_COMPOSE=/home/ubuntu/infra/service/compose.yaml
+      if diff -q --strip-trailing-cr "$SERVER_COMPOSE" infra/service/compose.yaml >/dev/null 2>&1; then
+        echo "compose 동일 — 교체 없음"
+      else
+        echo "--- compose 차이 (서버 → 저장소) ---"
+        diff -u --strip-trailing-cr "$SERVER_COMPOSE" infra/service/compose.yaml || true
+        cp -p "$SERVER_COMPOSE" "$SERVER_COMPOSE.bak-$(date +%Y%m%d-%H%M%S)"
+        cat infra/service/compose.yaml > "$SERVER_COMPOSE"
+        echo "저장소 정본으로 교체했다 (백업 보관)"
+      fi
     - cd /home/ubuntu/infra/service
+    # 교체한 파일이 유효한지 먼저 본다 — 깨진 compose 로 up 하면 서비스가 내려간다.
+    - docker compose config >/dev/null
     - BACKEND_IMAGE=wikipulse-backend:$CI_COMMIT_SHORT_SHA docker compose up -d backend
     # ddl-auto: validate 통과 여부 = 기동 성공 여부. 여기서 실패하면 스키마 불일치다.
     #
