@@ -274,10 +274,37 @@ deploy:backend:
     - docker build -t wikipulse-backend:$CI_COMMIT_SHORT_SHA -f backend/Dockerfile backend
     - cd /home/ubuntu/infra/service
     - BACKEND_IMAGE=wikipulse-backend:$CI_COMMIT_SHORT_SHA docker compose up -d backend
-    - sleep 20
-    - docker compose ps
     # ddl-auto: validate 통과 여부 = 기동 성공 여부. 여기서 실패하면 스키마 불일치다.
-    - docker run --rm --network wikipulse-net curlimages/curl:latest -sf http://backend:8080/actuator/health
+    #
+    # 🔴 ~~sleep 20 뒤 한 번 때린다~~ → **재시도 폴링** (WP-174).
+    #    2026-09-21 파이프라인 212498 이 **성공한 배포인데 빨갛게 떴다** — 기동에 25.0초가
+    #    걸려 20초 대기 뒤의 단발 호출이 5초 차이로 떨어졌다. 컨테이너·API·actuator 모두
+    #    정상이었다. 같은 날 직전 배포(211808)는 통과했다.
+    #
+    # ⚠️ **간헐적이라 더 나쁘다.** EC2 가 t3 버스트라 CPU 크레딧 잔량에 따라 기동 시간이
+    #    흔들린다 — 같은 코드가 어떤 날은 통과하고 어떤 날은 떨어진다. 성공한 배포가
+    #    빨갛게 뜨면 **진짜 실패와 구분이 안 되고**, 다음에 정말 깨져도 무시하게 된다.
+    #
+    # 🔴 상한을 없애지 않는다. 영원히 기다리면 깨진 배포가 러너를 물고 있다.
+    # ⚠️ 성공 시 `exit 0` 으로 끝내지 않는다 — 잡 전체가 거기서 끝나므로 나중에 이 뒤에
+    #    단계를 추가하면 **조용히 건너뛴다.** 플래그로 빠져나온다.
+    - |
+      ok=0
+      for i in $(seq 1 24); do   # 5초 × 24 = 최대 2분
+        if docker run --rm --network wikipulse-net curlimages/curl:latest \
+             -sf http://backend:8080/actuator/health >/dev/null; then
+          ok=1
+          echo "health OK (${i}번째 시도, 약 $((i * 5))초)"
+          break
+        fi
+        sleep 5
+      done
+      if [ "$ok" -ne 1 ]; then
+        echo "health check 2분 내 실패 — 아래 로그를 본다"
+        docker compose ps
+        docker compose logs --tail 80 backend
+        exit 1
+      fi
   environment:
     name: production
     url: https://wikipulse.example.com
