@@ -41,11 +41,39 @@
 시점을 CORE + `root-limit 20/스냅샷` 으로 다시 저장하면서 대체됐다. LIVE 에는 요약·종목이
 안 붙어 있어 **CASCADE 로 날아간 downstream 은 없다.**
 
-🔴 **남은 것: 간선이 0이다.** as-of 링크 캐시가 골든데이 480행뿐이라 LIVE root 20개가 매
-시점 전부 singleton 으로 떨어진다(`as-of 링크 캐시 미보유 20건` 경고가 시점마다 뜬다).
-`CLUSTER_FETCH_LINKS=1` 을 켜야 CORE 가 묶는데 `CONTACT_EMAIL` 이 필요하고, 컨테이너가
-수동 `docker run` 이라 환경변수 추가에 재생성이 든다 — `-196` 과 묶일 수 있다.
-요청량은 시점당 root 상한(20)만큼이라 부담은 아니다.
+### 0-A-1. `CLUSTER_FETCH_LINKS=1` 켬 — LIVE 가 멀티 멤버로 묶인다 (같은 날 저녁)
+
+as-of 링크 캐시가 골든데이 480행뿐이라 LIVE root 20개가 매 시점 전부 singleton 이었다
+(`as-of 링크 캐시 미보유 20건` 경고). 켜고 나서:
+
+| | 캐시 없음 | `CLUSTER_FETCH_LINKS=1` |
+| --- | --- | --- |
+| 클러스터 / 멤버 | 260 / 260 | **233 / 280** |
+| 멀티 멤버 클러스터 | **0** | **30** (최대 8멤버) |
+| 링크 수집 | — | 시점당 20건, **실패 0** |
+
+묶인 결과가 멀쩡하다: `India at the 2026 Asian Games` 에 종목별 문서 8개, Brownlow Medal
++ 수상자, Gerber 가족, Al Maktoum 가족. 캐시는 480 → 761행이고 **한 번 받으면 재사용**이라
+새 시점에서만 20건씩 받는다.
+
+🔴 **컨테이너는 수동 `docker run` 이다.** 환경변수 추가에 `rm -f` + 재생성이 들었다.
+재현 명령은 §3-1 에 적어 뒀다. `-196` 으로 compose 인수인계할 때 이 두 변수를 빠뜨리면
+조용히 singleton 으로 돌아간다.
+
+### 0-A-2. ⚠️ 간선 0 은 이걸로 안 풀린다 — `-183` 이다
+
+~~간선 0 은 캐시가 비어서다~~ → **틀렸다** (2026-09-22 저녁 정정).
+
+`cluster_edge` 행을 만드는 건 `snapshot._expand_seed()` 뿐이고 그건 **legacy expansion
+전용**이다(`clickstream`·`wikidata` 두 종류). -161 이 expansion 을 끄면서 **CORE 경로에서
+간선은 구조적으로 0 이다.**
+
+🔴 **운영 `cluster_edge` 가 전체 0행이다 — 골든데이 포함.** 골든데이는 멀티 멤버 클러스터가
+42개인데도 간선이 0이다. 즉 "문서들이 같은 이슈로 묶이지만 왜 묶였는지 선이 없다" 는
+상태이고, 이건 `-183`(CORE 규칙·버블맵 계약, sangeune) 영역이다.
+
+⚠️ **멀티 멤버와 간선을 같은 문제로 보지 말 것.** 원이 여러 개 뜨는 것(위 0-A-1)과 원을
+잇는 선(`-183`)은 다른 배선이다. 한쪽이 풀렸다고 다른 쪽이 풀리지 않는다.
 
 ---
 
@@ -228,8 +256,29 @@ ssh app-server -o BatchMode=yes 'sudo docker restart wikipulse-live-cycle wikipu
 🔴 **순서가 있다. 마이그레이션 먼저, 파일 나중.** 반대로 하면
 `relation "page_view_hourly_ingest" does not exist` 로 재판정·만료가 통째로 죽는다.
 
-⚠️ **`live-cluster` 는 안 건드렸다.** 같은 마운트를 보므로 다음 재시작 때 새 코드를
-쓴다. 지금 끊으면 도는 스냅샷이 깨진다.
+~~⚠️ `live-cluster` 는 안 건드렸다~~ → 저녁에 건드렸다. 아래 3-1.
+
+### 3-1. `live-cluster` 재생성 명령 (2026-09-22 21:15 KST)
+
+수동 `docker run` 이라 환경변수를 더하려면 통째로 다시 만들어야 한다. **`-196` 으로
+compose 에 인수인계할 때 이 설정이 정본이다** — 특히 뒤 두 변수를 빠뜨리면 조용히
+singleton 으로 돌아간다.
+
+```bash
+sudo docker rm -f wikipulse-live-cluster
+sudo docker run -d --name wikipulse-live-cluster \
+  --restart unless-stopped --network postgres_default -w /opt/app \
+  -v /home/ubuntu/wikipulse-local-test/data-pipeline:/opt/app \
+  -e DATABASE_URL='postgresql://<user>:<pw>@postgres:5432/wikipulse' \
+  -e CLUSTER_LOOP_INTERVAL=300 \
+  -e CLUSTER_FETCH_LINKS=1 \
+  -e CONTACT_EMAIL=wikipulse@example.com \
+  wikipulse-spark-standalone:local bash cluster-loop.sh
+```
+
+⚠️ **`CONTACT_EMAIL` 이 플레이스홀더다**(`example.com`). `live-cycle` 이 쓰던 값을 그대로
+따랐는데, 위키미디어는 연락 가능한 주소를 요구한다. 지금은 통과하지만 링크 수집까지
+같은 값으로 늘렸으니 **차단당하면 여기부터 의심한다.**
 
 ---
 
@@ -314,8 +363,9 @@ ssh app-server -o BatchMode=yes "cd /home/ubuntu && infra/edit-env.sh /home/ubun
 
 상류도 클러스터 루프도 풀렸다. LIVE 는 백로그를 소화하며 돈다.
 
-- [ ] 🔴 **LIVE 간선 0 해소** — `CLUSTER_FETCH_LINKS=1` + `CONTACT_EMAIL`. 컨테이너가
-      수동 `docker run` 이라 재생성이 필요해 `-196` 과 묶인다. §0-A 참고
+- [x] ~~LIVE 멀티 멤버~~ — `CLUSTER_FETCH_LINKS=1` 켬. 멀티 멤버 30건(최대 8) (§0-A-1)
+- [ ] 🔴 **간선 0 은 `-183`** — CORE 경로에는 간선 배선 자체가 없다. 골든데이도 0행이다.
+      sangeune의 CORE 규칙·버블맵 계약 결정이 먼저다 (§0-A-2)
 - [ ] `-190` 재적재 — 중복 행 정책 필요
 - [ ] **고장을 드러나게** 하기. 이번에 같은 증상("신규 데이터 없음")이 다섯 가지 원인에서
       나왔고, 그중 둘은 컨테이너가 `Up` 인 채 안에서만 죽어 있었다. `live-cycle` 의 "대기 N"
