@@ -26,6 +26,8 @@ variables:
 .paths_backend: &paths_backend
   - backend/**/*
   - db/migrations/**/*
+  # 🔴 compose 를 고쳤는데 배포가 안 돌면 서버는 옛 파일 그대로다 (WP-179).
+  - infra/service/compose.yaml
   - .gitlab-ci.yml
  
 .paths_db: &paths_db
@@ -39,6 +41,15 @@ variables:
  
 .paths_frontend: &paths_frontend
   - frontend/**/*
+  - .gitlab-ci.yml
+
+# 🔴 기존 앵커 어느 것도 infra/ 와 루트 compose 를 안 본다 — 거기에 얹으면 정작 문제가
+#    생기는 변경에서 검사가 안 돈다. 그래서 앵커를 따로 둔다 (WP-168).
+.paths_config: &paths_config
+  - backend/src/main/resources/application.yml
+  - infra/service/compose.yaml
+  - docker-compose.yml
+  - tools/check_compose_env.py
   - .gitlab-ci.yml
  
 # ================================================================ test
@@ -70,6 +81,20 @@ test:backend:
     - chmod +x gradlew
     - ./gradlew test --no-daemon
  
+# 노브를 더해 놓고 compose 에 안 적으면 `.env` 에 값을 넣어도 컨테이너 안에 안 들어간다.
+# 조용히 애플리케이션 기본값으로 떨어져서 "켰는데 아무 일도 안 일어난다"로 보인다.
+# -142 와 -168 에서 두 번 물렸다. 의존성이 없어 수십 밀리초면 끝난다.
+test:config:
+  stage: test
+  image: python:3.11-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_config
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_config
+  script:
+    - python tools/check_compose_env.py
+
 test:db:
   stage: test
   image: python:3.11-slim
@@ -127,7 +152,10 @@ test:pipeline:
     #    Spark 가 필요한 파일(streaming 대조·baseline Spark)은 계속 건너뛴다.
     #    `-ra` 로 건너뛴 이유를 로그에 남겨, 안 도는 게 늘어나면 보이게 한다.
     # pandas 는 stock 테스트가 쓴다 — 로컬 venv 에 우연히 있어서 안 보이던 의존성이다.
-    - pip install pytest==8.3.4 requests==2.32.3 "psycopg[binary]==3.3.5" pgserver==0.1.4 pandas==3.0.5
+    # ⚠️ confluent-kafka 도 깐다. producer/wiki_edits.py 가 모듈 최상단에서 임포트해서
+    #    없으면 tests/test_wiki_edits.py 가 collection 단계에서 죽는다 — pandas 때와
+    #    같은 함정이다(로컬 venv 에 우연히 있어서 안 보인다, 2026-09-19 CI 실측).
+    - pip install pytest==8.3.4 requests==2.32.3 "psycopg[binary]==3.3.5" pgserver==0.1.4 pandas==3.0.5 confluent-kafka==2.6.1
     # 스키마를 먼저 만든다. CI·배포가 같은 스크립트를 쓴다(db/apply_migrations.py).
     - python db/apply_migrations.py
     - cd data-pipeline
@@ -142,7 +170,31 @@ test:pipeline:
     - (cd gkg && pytest -q -ra)
     - (cd stock && pytest -q -ra)
     - (cd gdelt && pytest -q -ra)
- 
+
+test:pipeline-spark:
+  stage: test
+  image: python:3.11-slim-bookworm
+  rules:
+    # MR 에서 한 번, develop 머지 결과에서 한 번 (WP-131 과 같은 이유).
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *paths_pipeline
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      changes: *paths_pipeline
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  cache:
+    key: pipeline-spark-pip
+    paths: [.pip]
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless
+  script:
+    # 🔴 위 test:pipeline 은 pyspark 를 안 깐다. streaming 계획 회귀는 실제 Spark 가
+    #    없으면 조용히 skip 되므로 이 잡 하나만 따로 돌린다. Windows 로컬에서는
+    #    writeStream 에 필요한 Hadoop native DLL 이 없어 같은 테스트가 skip 된다.
+    - pip install pytest==8.3.4 pyspark==3.5.3
+    - cd data-pipeline
+    - pytest -q tests/test_edit_windows.py::test_live_pipeline_does_not_crash_when_planning_second_micro_batch
+
 test:frontend:
   stage: test
   image: node:20-alpine
@@ -245,12 +297,60 @@ deploy:backend:
     - bash infra/apply-migrations.sh
     # backend/Dockerfile 이 안에서 gradle 빌드까지 한다 — 별도 아티팩트가 필요 없다.
     - docker build -t wikipulse-backend:$CI_COMMIT_SHORT_SHA -f backend/Dockerfile backend
+    # 🔴 저장소가 compose 의 정본이다 (WP-179). 배포는 서버 파일을 쓰는데
+    #    동기화 수단이 없어서 조용히 낡는다 — 2026-09-21 에 서버 31줄 / 저장소 51줄이었고
+    #    -165·-172·-176 변수가 통째로 빠져 있었다. 기본값이 우연히 같아 아무도 몰랐다.
+    #    ⚠️ 기본값이 다른 노브였다면(예: -168 의 *_SOURCE) `.env` 에 값을 넣어도
+    #       에러 없이 무시된다. 그 유형은 사람이 알아채는 경로가 없다.
+    # ⚠️ 서버에만 있던 손수정은 덮인다. 그게 의도지만 **diff 로 드러나야** 한다 —
+    #    안 보이면 이 단계가 또 다른 조용한 실패가 된다.
+    # 🔴 cp 가 아니라 `cat >` 다. 기존 inode 에 써 넣어 소유권·권한이 남는다(-178 실측).
+    - |
+      SERVER_COMPOSE=/home/ubuntu/infra/service/compose.yaml
+      if diff -q --strip-trailing-cr "$SERVER_COMPOSE" infra/service/compose.yaml >/dev/null 2>&1; then
+        echo "compose 동일 — 교체 없음"
+      else
+        echo "--- compose 차이 (서버 → 저장소) ---"
+        diff -u --strip-trailing-cr "$SERVER_COMPOSE" infra/service/compose.yaml || true
+        cp -p "$SERVER_COMPOSE" "$SERVER_COMPOSE.bak-$(date +%Y%m%d-%H%M%S)"
+        cat infra/service/compose.yaml > "$SERVER_COMPOSE"
+        echo "저장소 정본으로 교체했다 (백업 보관)"
+      fi
     - cd /home/ubuntu/infra/service
+    # 교체한 파일이 유효한지 먼저 본다 — 깨진 compose 로 up 하면 서비스가 내려간다.
+    - docker compose config >/dev/null
     - BACKEND_IMAGE=wikipulse-backend:$CI_COMMIT_SHORT_SHA docker compose up -d backend
-    - sleep 20
-    - docker compose ps
     # ddl-auto: validate 통과 여부 = 기동 성공 여부. 여기서 실패하면 스키마 불일치다.
-    - docker run --rm --network wikipulse-net curlimages/curl:latest -sf http://backend:8080/actuator/health
+    #
+    # 🔴 ~~sleep 20 뒤 한 번 때린다~~ → **재시도 폴링** (WP-174).
+    #    2026-09-21 파이프라인 212498 이 **성공한 배포인데 빨갛게 떴다** — 기동에 25.0초가
+    #    걸려 20초 대기 뒤의 단발 호출이 5초 차이로 떨어졌다. 컨테이너·API·actuator 모두
+    #    정상이었다. 같은 날 직전 배포(211808)는 통과했다.
+    #
+    # ⚠️ **간헐적이라 더 나쁘다.** EC2 가 t3 버스트라 CPU 크레딧 잔량에 따라 기동 시간이
+    #    흔들린다 — 같은 코드가 어떤 날은 통과하고 어떤 날은 떨어진다. 성공한 배포가
+    #    빨갛게 뜨면 **진짜 실패와 구분이 안 되고**, 다음에 정말 깨져도 무시하게 된다.
+    #
+    # 🔴 상한을 없애지 않는다. 영원히 기다리면 깨진 배포가 러너를 물고 있다.
+    # ⚠️ 성공 시 `exit 0` 으로 끝내지 않는다 — 잡 전체가 거기서 끝나므로 나중에 이 뒤에
+    #    단계를 추가하면 **조용히 건너뛴다.** 플래그로 빠져나온다.
+    - |
+      ok=0
+      for i in $(seq 1 24); do   # 5초 × 24 = 최대 2분
+        if docker run --rm --network wikipulse-net curlimages/curl:latest \
+             -sf http://backend:8080/actuator/health >/dev/null; then
+          ok=1
+          echo "health OK (${i}번째 시도, 약 $((i * 5))초)"
+          break
+        fi
+        sleep 5
+      done
+      if [ "$ok" -ne 1 ]; then
+        echo "health check 2분 내 실패 — 아래 로그를 본다"
+        docker compose ps
+        docker compose logs --tail 80 backend
+        exit 1
+      fi
   environment:
     name: production
     url: https://wikipulse.example.com
