@@ -381,6 +381,17 @@ deploy:backend:
         docker compose logs --tail 80 backend
         exit 1
       fi
+    # 🔴 배포마다 wikipulse-backend:<SHA> 가 하나씩 쌓인다 (WP-201).
+    #    자동 배포로 바꾼 뒤로는 백엔드를 건드릴 때마다 늘어나 디스크를 먹는다.
+    #    최근 2개만 남긴다 — 롤백 여지는 두되 무한정 쌓이지는 않게.
+    #    ⚠️ health check **뒤에** 둔다. 배포가 실패하면 정리가 안 돌아 옛 이미지가 남는다.
+    #    ⚠️ `|| true` — 배포는 성공했는데 정리 실패로 잡이 빨개지면 오해를 부른다.
+    #       지금 돌고 있는 이미지는 docker 가 거부하므로(image is being used) 안전하다.
+    - |
+      docker images wikipulse-backend --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+        | sort -r | tail -n +3 | cut -f2 | xargs -r docker rmi || true
+    - docker image prune -f || true
+    - docker images wikipulse-backend
   environment:
     name: production
     url: https://wikipulse.example.com
