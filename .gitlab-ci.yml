@@ -11,6 +11,35 @@ workflow:
     - when: never
  
 stages: [test, build, deploy, verify]
+
+# Real HTTP/browser auth and bookmark tests against a temporary PostgreSQL cluster.
+test:accounts:
+  stage: test
+  image: node:24-bookworm
+  timeout: 20m
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - backend/**/*
+        - frontend/**/*
+        - db/migrations/**/*
+        - tools/test_account_e2e.py
+        - .gitlab-ci.yml
+  variables:
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless python3-venv
+    - python3 -m venv /tmp/account-e2e-venv
+    - /tmp/account-e2e-venv/bin/pip install pgserver==0.1.4 "psycopg[binary]==3.3.5"
+    - (cd backend && chmod +x gradlew && ./gradlew bootJar --no-daemon)
+    - (cd frontend && npm ci && npx playwright install --with-deps chromium)
+    - /tmp/account-e2e-venv/bin/python tools/test_account_e2e.py --browser
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - output/account-e2e/
+      - frontend/test-results/accounts/
  
 default:
   tags: [ec2-docker]
