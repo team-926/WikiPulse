@@ -11,11 +11,89 @@
 돌리는 것이다.~~ → ~~(오전) 그 이틀의 replay 를 운영에 올리는 게 남았다~~ → **(오후 갱신)
 시연 이틀(07-17·08-02)의 replay 가 운영에 올라갔고, 시연 스냅샷 3개만 매칭·요약 워커가
 채우는 중이다. GDELT 합집합이 운영에서 처음 살아났다. 검증 나머지는 09-24 09:00 KST 예산
-리셋 뒤에 돈다 (§A-7).**
+리셋 뒤에 돈다 (§A-7).** → **(저녁 갱신) 조회수가 1시간 밀려 있던 것을 발견해 2개월 replay 를
+처음부터 다시 돌리는 중이다. §B 부터 읽는다.**
 
 ---
 
-## A. 2026-09-23 오전에 바뀐 것 — 먼저 읽는다
+## B. 🔴 2026-09-23 저녁 — 2개월 replay 를 처음부터 다시 돌리는 중 (먼저 읽는다)
+
+§A 이후에 한 일과, **지금 서버에서 돌고 있는 작업**이다. 새 PC 에서 이어받으면 여기서 시작한다.
+
+### B-1. 왜 다시 돌리나 — 조회수가 통째로 1시간 밀려 있었다
+
+`-137` 의 시간별 조회수 산출물(`filtered/`·`baseline-views/`)이 **파일명 시각(윈도우 끝)을
+윈도우 시작으로** 읽고 만들어졌다. `ingest_hour` 가 고쳐지기(2026-09-18) 전 코드로 돌린 것이다.
+
+| 산출물 | label | 일치하는 원본 파일 | 일치 |
+| --- | --- | --- | --- |
+| `filtered` 07-25T03 | 03시 | `pageviews-20260725-030000` (= 02~03시 창) | 1,706/1,706 |
+| `baseline-views` 07-10T03 | 03시 | `pageviews-20260710-030000` | 23,719/23,720 (다음 파일은 1,482) |
+
+즉 운영 replay 2개월(19,432 이슈)은 **편집 H시와 조회수 H-1시를 붙여** 판정됐다. 기준선도 같이
+밀려 있어서 비율은 대충 맞아 보이지만, 급증 시각·루트 순위가 한 시간씩 어긋난다. 조용히 틀리는 유형이다.
+
+그 밖에 이날 오후 운영에서 바뀐 것:
+
+- 2025 골든데이(2025-06-12) replay 는 **운영에서 삭제**했다(사용자 지시). 백업 `~/backups/wikipulse-pre-goldenday-delete-20260923-071442.dump`
+- 5436 의 2개월 전체(07-17 01:00 ~ 09-01 00:00, 19,432 이슈)를 운영에 올렸다. 백업 `~/backups/wikipulse-pre157-20260923-043147.dump`
+- 검증 일일 상한 `BUDGET_VERIFICATIONCALLS` 는 **700** 이다(§A-2 의 400 에서 또 올림, 🔴 끝나면 300 으로)
+- 프론트 날짜 선택은 그날 **KST 마지막 스냅샷**을 연다. 시연 스냅샷은 KST 7/17 10:00 · 7/18 07:00 · 8/3 04:00
+- ⚠️ 이슈 탐색 검색은 **현재 페이지 20개 안에서, 영어 제목으로** 찾는다. "오디세이" 로는 안 나온다 — `odyssey`
+
+### B-2. 🔴 지금 돌고 있는 것 (2026-09-23 08:20 UTC 기준)
+
+모두 EC2 컨테이너다 — PC 를 꺼도 계속 돈다. 이미지는 `wikipulse-spark:3.5.3-py311`, 코드는 develop 의
+`data-pipeline` 복사본이다.
+
+| 서버 | 컨테이너 | 하는 일 | 출력 |
+| --- | --- | --- | --- |
+| 데이터 EC2 | `refilter-hourly` | 후보 제목 필터, 06-19T00~07-19T23 (744h) | `~/replay-sep/filtered-v2` |
+| 데이터 EC2 | `refilter-base` | 기준선 universe(`ge100.txt` 27,636) 필터, 06-19~07-16 (672h) | `~/replay-sep/baseline-v2` |
+| 데이터 EC2 | `ingest-edits` | `mediawiki_history` 스냅샷 2026-08 의 2026-06·07·08 정규화 | `~/replay-sep/edits/enwiki/<월>` |
+| 데이터 EC2 | `rc-collect` | RecentChanges 09-18T00~09-21T08 (09-20T14 부터 이어받음) | `~/replay-sep/recentchanges-164` |
+| 서비스 EC2 | `refilter-svc` | 후보 제목 필터, 07-20T00~08-31T23 (1,032h) | `~/refilter/out` |
+
+진행 확인:
+
+```bash
+ssh ubuntu@data.wikipulse.example.com 'cd ~/replay-sep; for c in refilter-hourly refilter-base ingest-edits rc-collect; do echo "[$c] $(sudo docker logs $c 2>&1 | grep -v "^캐시\|^적재\|^이미" | tail -1)"; done; find filtered-v2 -name _manifest.json | wc -l; find baseline-v2 -name _manifest.json | wc -l; ls edits/enwiki'
+ssh ubuntu@wikipulse.example.com 'find ~/refilter/out -name _manifest.json | wc -l'
+```
+
+- 필터 드라이버는 `~/replay-sep/refilter-fast.py`(양쪽 서버에 같은 파일). 수정된 `ingest_hour` 를 그대로 부르고,
+  원본 줄을 `zcat | grep '^en(\.m)? '` 로 먼저 거르기만 한다. 07-25T03 결과가 1줄씩 비교해 같다(3,195행)
+- 이미 만든 시간은 `_manifest.json` 으로 건너뛴다 → **죽으면 같은 명령으로 다시 띄우면 된다**
+- 원본 시간별 덤프는 데이터 EC2 `~/wikipulse-replay-137/cache`(06-19~09-17, 2,184개). 서비스 EC2 에는 07-20~09-01 분만 복사했다
+- 🔴 `-137` 원본 편집 적재본(`out/enwiki/2026-0x`)은 상은 PC 에만 있어서 덤프에서 다시 만든다
+- 🔴 User-Agent 연락처는 `CONTACT_EMAIL` 이 필요하다. 운영 `wikipulse-producer` 컨테이너 env 값을 그대로 넘겼다 — 개인 메일을 새로 넣지 않는다
+
+### B-3. 남은 순서
+
+1. **warm-up 조회수 합치기** — 06-19~07-16 은 후보 필터분과 기준선 universe 가 겹친다. 둘을 그냥
+   `--views` 에 넣으면 `sum_views` 가 겹친 제목을 **두 번 더한다.** 제목 기준 합집합으로 만든다:
+   `python3 /w/merge_views.py /w/filtered-v2 /w/baseline-v2 /w/views-warm` (mismatch 0 이어야 한다).
+   서비스 EC2 `~/refilter/out` 은 데이터 EC2 `filtered-v2` 로 합친다
+2. **창 생성 (월별)** — `python -m batch.historical_windows_ingest --edits edits/enwiki/2026-0X --views <그 달 조회수> --out windows/2026-0X`.
+   창은 시간 단위라 월별로 나눠도 결과가 같고, 메모리가 준다
+3. **기준선 적재** — `spike.baseline_sink --input <6·7월 창> --as-of 2026-07-16 --dsn <replay_v2>`.
+   로컬 5436 은 문서 1,147,681·평균 sample_days 1.08·최대 28 이었다 — 새 값이 크게 다르면 멈추고 본다
+4. **9월** — `rc-collect` 가 끝나면 `python3 /w/sept_windows.py titles edits/enwiki/2026-09 recentchanges-164 2026-09-21T08:00:00 ct-sep`
+   → 그 제목으로 09-01T00~09-21T07 필터(원본이 없는 09-17T23 이후는 `ingest_hour` 가 받는다)
+   → `sept_windows.py windows ... <조회수 dir>`. 편집은 09-01 02:00Z 전은 덤프(`--range 2026-09` 도 적재해야 한다), 이후는 RC
+5. **`bulk_replay`** — 07-17 이후 창을 격리 DB 로: `spike.bulk_replay --windows <dir> --since 2026-07-17 --dsn <replay_v2> --state <json>`
+6. **클러스터링** — `cluster.driver --source replay --since ... --until ... --fetch-links` (ROOT+CORE 기본값).
+   `replay_v2.page_asof_links` 에 로컬 5436 캐시 22,049건을 넣어 뒀다
+7. **운영 교체** — 운영의 replay 를 지우고 `tools/replay_demo_load.py` 로 `replay_v2` 를 옮긴다. 먼저 `pg_dump` 백업.
+   🔴 클러스터 id 가 전부 새로 생겨 시연 검증·요약(오디세이 CMCSA 등)이 사라진다 → 시연 스냅샷을 다시 골라
+   `SNAPSHOT_DAYS` 를 고치고 검증·요약을 다시 돌린다
+8. 정리 — `BUDGET_VERIFICATIONCALLS` 300 복구, `replay_src_5436`·`replay_v2` DB, 서버 `~/refilter`·`~/replay-sep` 중간 산출물
+
+격리 DB `replay_v2` 는 **운영 postgres 컨테이너 안의 별도 DB** 다(`usera609`, 운영 `wikipulse` 스키마만 복사).
+
+---
+
+## A. 2026-09-23 오전에 바뀐 것
 
 ### A-1. 🔴 시연일 확정: **2026-07-17 · 2026-08-02** (UTC 날짜)
 
