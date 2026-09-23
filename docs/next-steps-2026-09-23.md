@@ -8,8 +8,10 @@
 일어난 것만 적는다.
 
 한 줄 요약: ~~기준선 적재 경로를 만들어 운영에 켰다. 남은 건 기준선 잡을 주기적으로
-돌리는 것이다.~~ → **(오전 갱신) 기준선은 하루 한 번 자동으로 돈다. 시연은 07-17·08-02
-이틀로 확정했고, 그 이틀의 replay 를 운영에 올리는 게 남았다 (§A).**
+돌리는 것이다.~~ → ~~(오전) 그 이틀의 replay 를 운영에 올리는 게 남았다~~ → **(오후 갱신)
+시연 이틀(07-17·08-02)의 replay 가 운영에 올라갔고, 시연 스냅샷 3개만 매칭·요약 워커가
+채우는 중이다. GDELT 합집합이 운영에서 처음 살아났다. 검증 나머지는 09-24 09:00 KST 예산
+리셋 뒤에 돈다 (§A-7).**
 
 ---
 
@@ -30,22 +32,34 @@ SELECTION(시점당 상위 20, 컷 1,176회)에서 빠진다 — 현행 규칙�
 2개월 루트 22,080 중 상장사 문서는 41번이고 그중 27번이 Google(크롤러)이다. 기업 뉴스는 원리상
 잘 안 들어온다 — 규칙 변경은 제품 논의거리다(-161 영역), 시연용으로 건드리지 않는다.
 
-### A-2. 운영 설정 (서비스 EC2 `.env`, 백엔드 `82bfe1af` 재생성 완료)
+### A-2. 운영 설정 (서비스 EC2 `.env`) — 🔴 오후에 다시 바뀌었다
+
+~~백엔드 `82bfe1af`, SNAPSHOT_DAYS=2026-07-17,2026-08-02~~ → **백엔드 `e9845b44` (2026-09-23 15:40 KST)**:
 
 ```
-WIKIPULSE_MATCHING_SCHEDULER_SOURCE=replay           # 원래 있던 값
+WIKIPULSE_MATCHING_SCHEDULER_SOURCE=replay                    # 원래 있던 값
 WIKIPULSE_MATCHING_SUMMARY_SOURCE=replay
-WIKIPULSE_MATCHING_SCHEDULER_SNAPSHOT_DAYS=2026-07-17,2026-08-02   # -215
-WIKIPULSE_MATCHING_SUMMARY_SNAPSHOT_DAYS=2026-07-17,2026-08-02
-WIKIPULSE_MATCHING_GMS_VERIFICATIONMODEL=gpt-5.4-mini              # nano 에서 올림
+WIKIPULSE_MATCHING_SCHEDULER_SNAPSHOT_DAYS=2026-07-17T01:00,2026-07-17T22:00,2026-08-02T19:00
+WIKIPULSE_MATCHING_SUMMARY_SNAPSHOT_DAYS=(같은 값)            # -215 시각 한정. 검증도 이걸 따른다
+WIKIPULSE_MATCHING_SCHEDULER_TOPPERSNAPSHOT=5                 # 10 → 5
+WIKIPULSE_MATCHING_SUMMARY_TOPPERSNAPSHOT=5
+WIKIPULSE_MATCHING_GMS_VERIFICATIONMODEL=gpt-5.4-mini         # nano 에서 올림
+WIKIPULSE_MATCHING_BUDGET_VERIFICATIONCALLS=400               # 🔴 임시. 300 으로 되돌린다(A-7)
+WIKIPULSE_MATCHING_SUMMARY_ENABLED=true                       # 요약 모델은 Sonnet 유지
+# WIKIPULSE_MATCHING_VERIFICATION_TIER3THRESHOLD 는 안 넣었다 — 새 기본값 0(게이트 끔, -222)
 ```
+
+`.env` 백업: `.env.bak-215*` · `.env.bak-mini-*` · `.env.bak-budget-*` · `.env.bak-summary-*`
 
 - mini: 시연 쌍 포함 양성 8쌍 **24/24**, 오탐 8/24 (nano 19/24 · 오탐 7/24, GDELT 컨텍스트 없이).
   호출당 약 32 크레딧 (nano 8.8). 검증 일일 상한 300 이면 하루 최대 약 9,600
 - 🔴 **두 날을 다 채우면 워커를 끄거나 상한을 내린다.** 잔액 약 62,900 (09-23 12시), 만료 10-02
 - ⚠️ 모델은 `.env` 에만 있다. 저장소 기본값(compose·`application.yml`)은 여전히 nano
 
-### A-3. 남은 순서
+### A-3. ~~남은 순서~~ → 오후에 전부 끝냈다 (기록으로 남김)
+
+✅ 1 · 2 · 3 완료 — 5436 덤프 수령(sha256 `04f33ffd…`), 운영 적재(이슈 811 · 멤버 940 ·
+spike 3,583, 백업 `~/backups/wikipulse-pre157-20260923-043147.dump`), !189 배포. 4 는 A-7.
 
 1. **5436 preview 덤프 받기** (sangeune에게 요청함). 5435(인계 메인)의 클러스터는 **옛 규칙**
    결과다. 운영 규칙(ROOT+CORE, -161) 결과는 5436 에만 있다. spike 는 둘이 같다
@@ -78,6 +92,56 @@ WIKIPULSE_MATCHING_GMS_VERIFICATIONMODEL=gpt-5.4-mini              # nano 에서
 `(now − 38h)` 의 전날 — 대기 중인 급등이 자기 기준선에 섞이지 않게. 첫 적재는
 **2026-09-23 14:00 UTC(23:00 KST)**, 전부 표본 7일 미만. 7일 이상 슬롯은 09-29 전후.
 §2-1 은 끝났고 §2-2 는 그대로다.
+
+### A-6. 🔴 오후에 알아낸 것 — GDELT 합집합이 운영에서 0 이었다
+
+명세 §6.3 은 후보 = (a) 임베딩 ∪ **(b) GDELT(주력)** 인데, 운영 `cluster_org_mention` 은 **0행**,
+후보 4,740건이 **100% `EMBEDDING_ONLY`** 였다. HDFS `/wikipulse/raw/gdelt` 는 빈 폴더, 수집기
+컨테이너도 드라이버 배선도 없었다(-148 로컬 Milton 관통이 유일한 실행). 게다가 `gkg/predicate.py`
+가 **테마 ∧ 지역** 술어만 만들어 영화·스포츠·기업 이슈에서는 수집해도 전부 실패했다.
+
+한 일 (시연 이틀만):
+- GKG 백필 — 서비스 EC2 `~/wikipulse-local-test/data-pipeline/data/gdelt-data` (07-16~17 ·
+  08-01~02, 384 파일 1.5 GB, 결손 0). 하루는 스냅샷 직전 24시간 창 때문에 앞날까지 받았다
+- **키워드 술어**(-221, !197 머지 전) — 테마·지역이 둘 다 실패하면 씨드 제목을 기사
+  제목(Extras `PAGE_TITLE`)·기관명에서 찾는다. 별칭 3개(universal pictures·studios→CMCSA,
+  espn→DIS). 운영에는 서버 코드 사본을 건드리지 않고 일회성 컨테이너에 `gkg/` 만 덮어 돌렸다
+- 결과 `cluster_org_mention`: Odyssey 29 (CMCSA 140) · IMAX 3 (IMAX 2,389 · CMCSA 127) ·
+  SummerSlam 18 (DIS 35 · NFLX 11.5). 후보가 **BOTH·GDELT_ONLY** 로 처음 생겼다
+
+⚠️ 처음 드라이버를 돌리기 전에 한 슬롯으로 술어부터 확인했어야 했다 — 전체 백필 뒤에야
+술어 실패를 알았다.
+
+- 🔴 **3등급 게이트(N=2)를 영구히 껐다** (-222, !200 배포). SummerSlam 에서 GDELT 의 DIS·NFLX 가
+  먼저 통과하자 임베딩 정답 TKO 가 영구 스킵됐다. 이제 이슈당 후보 전부(최대 30) 검증 —
+  **범위를 풀면 일일 상한에 금방 닿는다.** 되살리려면 `…VERIFICATION_TIER3THRESHOLD=2`
+- 🔴 **검증 워커에 범위 한정이 전혀 없었다** (-215 !198). 날짜 필터 전 오늘 00~02:28 UTC 에
+  골든데이 후보로 검증 300회가 다 나갔다. 이제 scheduler 의 source·snapshot-days 를 따른다
+- LLM 검증 실측(mini, GDELT 컨텍스트 포함, 3회): Odyssey→CMCSA 3/3 · IMAX→IMAX 3/3 ·
+  SummerSlam→TKO 3/3 · →DIS 2/3 · IMAX→CMCSA 2/3("있을 수 있다" 추측) · SummerSlam→NFLX 3/3
+  (**일반론 통과 — 오탐으로 본다**). 기관명이 컨텍스트에 있으면 프롬프트가 느슨해진다 → lavendmin 공유
+- 요약 모델 mini 전환은 **보류** — 한국어 요약은 mini 로 잰 적이 없다. 시연 이슈 3개를
+  Sonnet·mini 로 나란히 비교한 뒤 정한다
+
+### A-7. 🔴 09-24 09:00 KST(UTC 자정) 뒤 할 일
+
+1. 검증 리셋 뒤 남은 약 210회가 돈다 — id 내림차순이라 08-02 → 07-17 22시 → 07-17 01시(Odyssey)
+   순. 확인:
+   ```sql
+   SELECT ic.snapshot_ts, p.title, count(*) FILTER (WHERE cs.check_state='DONE') done,
+          string_agg(cs.ticker, ',') FILTER (WHERE cs.verified) tickers
+     FROM cluster_stock cs JOIN issue_cluster ic ON ic.id=cs.cluster_id
+     JOIN cluster_member cm ON cm.cluster_id=ic.id JOIN wiki_page p ON p.id=cm.page_id
+    WHERE ic.snapshot_ts IN ('2026-07-17 01:00+00','2026-07-17 22:00+00','2026-08-02 19:00+00')
+    GROUP BY 1,2 ORDER BY 1,2;
+   ```
+   기대: SummerSlam 에 **TKO** · IMAX 에 **IMAX** · Odyssey 에 **CMCSA**
+2. 화면 확인 — `https://wikipulse.example.com/#/issues` 에서 시점을 그 세 스냅샷으로
+3. **채워지면 되돌린다**: `BUDGET_VERIFICATIONCALLS=300`, 검증·후보·요약 워커 `ENABLED=false`
+   (`/tmp/edit-env-218.sh` 또는 !193 머지 뒤 `infra/edit-env.sh`) → 백엔드 재생성
+4. 정리: 운영 postgres 임시 DB `replay_src_5436` DROP · 서비스 EC2 `/tmp/{gkg221*,edit-env-21*.sh,
+   vec_*,p5436*}` · GDELT 원본 1.5 GB(다시 쓸 계획 없으면)
+5. 머지 대기 MR: !193(-218 edit-env) · !196(-157 적재 도구·이 문서) · !197(-221 GDELT 키워드)
 
 ---
 
