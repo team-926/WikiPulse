@@ -22,8 +22,12 @@ test:accounts:
       changes:
         - backend/**/*
         - frontend/**/*
-        - db/migrations/**/*
+        - db/**/*
+        - docker/migrate/**/*
+        - docker/postgres/**/*
+        - docker-compose.yml
         - tools/test_account_e2e.py
+        - tools/test_local_migrations.py
         - .gitlab-ci.yml
   variables:
     GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
@@ -33,6 +37,8 @@ test:accounts:
     - /tmp/account-e2e-venv/bin/pip install pgserver==0.1.4 "psycopg[binary]==3.3.5"
     - (cd backend && chmod +x gradlew && ./gradlew bootJar --no-daemon)
     - (cd frontend && npm ci && npx playwright install --with-deps chromium)
+    - /tmp/account-e2e-venv/bin/python tools/test_local_migrations.py
+    - (cd frontend && npx playwright test e2e/auth.spec.js)
     - /tmp/account-e2e-venv/bin/python tools/test_account_e2e.py --browser
   artifacts:
     when: always
