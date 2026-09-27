@@ -6,7 +6,6 @@ import { issueCategories } from "../../data/categories.js";
 import { searchableTitles } from "../../data/titles.js";
 import {
   kstDate,
-  kstTimestamp,
   snapshotKey,
   timelineSnapshots,
 } from "../../data/pulse/time.js";
@@ -54,7 +53,9 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
     [target],
   );
   const map = useAsyncResource(loadMap, key);
-  const clusters = map.data?.data.clusters;
+  // Keep the last rendered snapshot mounted until the requested one arrives.
+  const displayedMap = map.data || (map.loading ? map.previousData : null);
+  const clusters = displayedMap?.data.clusters;
   const [layoutEngine] = useState(() => createLayoutEngine());
   const selected = (clusters || []).find((v) => v.issueKey === selectedKey);
   useEffect(() => {
@@ -190,7 +191,8 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
           </div>
           <div className="pulse-reading-guide">
             <span>
-              <b>NEW</b> {map.data?.meta.newWindowHours || 24}시간 내 최초 감지
+              <b>NEW</b> {displayedMap?.meta.newWindowHours || 24}시간 내 최초
+              감지
             </span>
             <span>노드 크기 = 공통 척도의 급증도</span>
           </div>
@@ -207,14 +209,11 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
                 {categoryFilters}
               </>
             }
-            hasMap={Boolean(map.data && filtered.length)}
+            hasMap={Boolean(displayedMap && filtered.length)}
             returnScroll={returnScroll}
           >
             <p className="pulse-notice" role="status">
-              {notice ||
-                (map.loading
-                  ? `${kstTimestamp(target.snapshotTs)} 지도를 불러오는 중입니다.`
-                  : "")}
+              {notice}
             </p>
             {map.error ? (
               <div className="pulse-empty" role="alert">
@@ -224,26 +223,27 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
                   지도 다시 불러오기
                 </button>
               </div>
-            ) : map.loading || !map.data ? (
-              <div className="pulse-loading" aria-busy="true">
+            ) : !displayedMap ? (
+              <div className="pulse-loading" role="status">
                 클러스터와 문서 관계를 불러오는 중입니다.
               </div>
             ) : (
               <>
-                {map.data.meta.truncated && (
+                {displayedMap.meta.truncated && (
                   <p role="status">
-                    전체 {map.data.meta.clusterCount}개 이슈 중{" "}
+                    전체 {displayedMap.meta.clusterCount}개 이슈 중{" "}
                     {clusters.length}
                     개를 표시합니다. 서버에서 일부 데이터만 제공했습니다.
                   </p>
                 )}
                 <div
                   className="explore-map-layout pulse-layout"
-                  data-snapshot={map.data.meta.snapshotTs}
+                  data-snapshot={displayedMap.meta.snapshotTs}
                   data-has-selection={Boolean(visibleSelected)}
                 >
                   {filtered.length ? (
                     <PulseMap
+                      loading={map.loading}
                       scene={scene}
                       cameraState={cameraState}
                       expanded={expanded}
@@ -252,7 +252,7 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
                       onToggleScan={() => setScanEnabled((value) => !value)}
                       selectedKey={visibleSelected?.issueKey}
                       nodeId={nodeId}
-                      meta={map.data.meta}
+                      meta={displayedMap.meta}
                       onSelect={selectCluster}
                       onNodeSelect={(issueKey, pageId) => {
                         setSelectedKey(issueKey);
@@ -280,10 +280,15 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
                       )}
                     </div>
                   )}
+                  {map.loading && !filtered.length && (
+                    <div className="pulse-map-loading" role="status">
+                      <span>클러스터와 문서 관계를 불러오는 중입니다.</span>
+                    </div>
+                  )}
                   {visibleSelected && (
                     <PulsePreview
                       cluster={visibleSelected}
-                      meta={map.data.meta}
+                      meta={displayedMap.meta}
                       nodeId={nodeId}
                       onNodeSelect={setNodeId}
                       savedEvents={savedEvents}
@@ -304,7 +309,7 @@ export default function PulsePage({ savedEvents, onToggleEvent, onSource }) {
                         onClick={() => selectCluster(v.issueKey)}
                       >
                         <span>{v.label}</span>
-                        <SignalBadges cluster={v} meta={map.data.meta} />
+                        <SignalBadges cluster={v} meta={displayedMap.meta} />
                         <small>{v.memberCount}개 문서</small>
                       </button>
                     ))}
