@@ -26,7 +26,7 @@ import { TrendChart } from "../../components/charts/TrendChart";
 import { Timeline, EventNews, Evidence } from "./EventSections";
 import EventDiscussion from "./EventDiscussion";
 import { IssueReport } from "../../components/event/IssueReport";
-import HistoryReportCalendar from "./HistoryReportCalendar.jsx";
+import HistoryReportDropdown from "./HistoryReportDropdown.jsx";
 import { issueHistoryEnabled } from "../../data/historyProduction.js";
 import { dataClient } from "../../data/index.js";
 import { wikipediaUrl } from "../../lib/wiki";
@@ -168,6 +168,7 @@ export default function EventPage({
           연관 주식
           <ArrowRight size={14} />
         </a>
+        {historyMode && <HistoryReportDropdown key={event.id} event={event} />}
         {isExample && (
           <button
             type="button"
@@ -207,8 +208,6 @@ export default function EventPage({
           </strong>
         </div>
       </div>
-
-      {historyMode && <HistoryReportCalendar key={event.id} event={event} />}
 
       <nav className="dt-tabs" role="tablist" aria-label="이벤트 상세 보기">
         {tabs.map((item, index) => (
