@@ -56,6 +56,13 @@ export default function PulseTimeline({
               min={kstDate(snapshots[0].snapshotTs)}
               max={kstDate(snapshots.at(-1).snapshotTs)}
               value={kstDate(selected.snapshotTs)}
+              onClick={(event) => {
+                if (typeof event.currentTarget.showPicker === "function") {
+                  // Open from the whole input, not just the native indicator.
+                  event.preventDefault();
+                  event.currentTarget.showPicker();
+                }
+              }}
               onChange={(event) => onDateSelect(event.target.value)}
             />
           </label>
