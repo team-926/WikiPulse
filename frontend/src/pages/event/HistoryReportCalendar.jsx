@@ -14,7 +14,7 @@ const moveMonth = (month, delta) => {
     .slice(0, 7);
 };
 
-export default function HistoryReportCalendar({ event }) {
+export default function HistoryReportCalendar({ event, onSelect }) {
   const load = useCallback(
     (signal) => allIssueHistoryReports(dataClient, event.id, { signal }),
     [event.id],
@@ -73,10 +73,7 @@ export default function HistoryReportCalendar({ event }) {
       <div className="dt-section-heading">
         <div>
           <h2>날짜별 기록</h2>
-          <p>
-            같은 대표 문서의 기록입니다. DB 리포트가 있는 날짜만 선택할 수
-            있습니다. 기준 시간대는 한국 시간입니다.
-          </p>
+          <p>기록이 있는 날짜를 선택하세요. 한국 시간 기준입니다.</p>
         </div>
       </div>
       <div className="hp-calendar-heading">
@@ -116,6 +113,7 @@ export default function HistoryReportCalendar({ event }) {
               aria-pressed={cell.date === selectedDate}
               disabled={!cell.enabled || loading}
               onClick={() => {
+                onSelect?.();
                 window.location.hash = hrefFor(
                   byDay.get(cell.date)[0].id,
                 ).slice(1);
@@ -140,6 +138,7 @@ export default function HistoryReportCalendar({ event }) {
             <a
               key={row.id}
               href={hrefFor(row.id)}
+              onClick={onSelect}
               aria-current={String(row.id) === event.id ? "page" : undefined}
             >
               {row.source === "live"

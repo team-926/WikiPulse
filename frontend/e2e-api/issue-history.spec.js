@@ -101,12 +101,63 @@ test("운영 이슈 탐색에서 대표 문서 한 건과 리포트 보유 날�
     .toBe(true);
   await page.locator(".event-row").dblclick();
   await expect(page).toHaveURL(/\/issues\/41\?q=Odyssey$/);
+  const trigger = page.getByRole("button", {
+    name: "날짜별 기록",
+    exact: true,
+  });
+  const calendar = page.getByRole("region", { name: "날짜별 기록 달력" });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(calendar).toBeHidden();
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const stockBox = await page.locator(".dt-report-actions > a").boundingBox();
+    const triggerBox = await trigger.boundingBox();
+    expect(Math.abs(stockBox.y - triggerBox.y)).toBeLessThan(2);
+    expect(triggerBox.x).toBeGreaterThan(stockBox.x + stockBox.width);
+    await trigger.click();
+    await expect(calendar).toBeVisible();
+    const panelBox = await page.locator(".dt-history-popover").boundingBox();
+    expect(panelBox.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
+    expect(panelBox.y).toBeGreaterThan(triggerBox.y + triggerBox.height);
+    await page.screenshot({
+      path: test.info().outputPath(`calendar-${width}.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(calendar).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "이전 달" })).toBeFocused();
+  await page.getByRole("button", { name: "이전 달" }).click();
+  await expect(page.getByRole("group", { name: "2026년 6월" })).toBeVisible();
+  await page.getByRole("button", { name: "다음 달" }).click();
+  await trigger.click();
+  await expect(calendar).toBeHidden();
+  await trigger.click();
+  await page.getByRole("heading", { level: 1 }).click();
+  await expect(calendar).toBeHidden();
+  await trigger.click();
+  await page.getByRole("tab", { name: "리포트", exact: true }).focus();
+  await expect(calendar).toBeHidden();
+  await trigger.click();
   await expect(page.getByTestId("calendar-day-2026-07-17")).toBeEnabled();
   await expect(page.getByTestId("calendar-day-2026-07-18")).toBeDisabled();
   await expect(page.getByText("오디세이 DB 본문")).toBeVisible();
-  await page.goto("/#/issues/42");
+  await page.goto("/#/issues/42?q=Odyssey");
+  await page.getByRole("button", { name: "날짜별 기록", exact: true }).click();
   await expect(page.getByTestId("calendar-day-2026-07-17")).toBeEnabled();
   await expect(page.getByTestId("calendar-day-2026-07-18")).toBeDisabled();
+  await page.getByTestId("calendar-day-2026-07-17").click();
+  await expect(page).toHaveURL(/\/issues\/41\?q=Odyssey$/);
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(calendar).toBeHidden();
+  await trigger.click();
+  await page.getByTestId("calendar-day-2026-07-17").click();
+  await expect(calendar).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 
 test("요약만 저장된 날짜도 활성화하고 본문 부재를 정확하게 설명한다", async ({
@@ -150,6 +201,7 @@ test("요약만 저장된 날짜도 활성화하고 본문 부재를 정확하�
     return false;
   });
   await page.goto("/#/issues/44");
+  await page.getByRole("button", { name: "날짜별 기록", exact: true }).click();
   await expect(page.getByTestId("calendar-day-2026-07-17")).toBeEnabled();
   await expect(
     page.getByText("DB에 저장된 요약", { exact: true }),
@@ -206,6 +258,7 @@ test("같은 날짜의 리포트 두 건은 시각별 ID로 구분한다", async
     return false;
   });
   await page.goto("/#/issues/47");
+  await page.getByRole("button", { name: "날짜별 기록", exact: true }).click();
   await expect(page.getByTestId("calendar-day-2026-07-17")).toHaveAttribute(
     "aria-label",
     "7월 17일, 리포트 2건",
@@ -219,8 +272,18 @@ test("같은 날짜의 리포트 두 건은 시각별 ID로 구분한다", async
   await expect(
     page.locator('.hp-same-day a[href="#/issues/47"]'),
   ).toContainText("실시간");
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page
+    .locator('.hp-same-day a[href="#/issues/46"]')
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: test.info().outputPath("calendar-same-day-mobile.png"),
+  });
   await page.locator('.hp-same-day a[href="#/issues/46"]').click();
   await expect(page).toHaveURL(/\/issues\/46$/);
+  await expect(
+    page.getByRole("button", { name: "날짜별 기록", exact: true }),
+  ).toHaveAttribute("aria-expanded", "false");
 });
 
 test("리포트 이력 API가 실패해도 기존 상세는 유지한다", async ({ page }) => {
@@ -251,6 +314,7 @@ test("리포트 이력 API가 실패해도 기존 상세는 유지한다", async
     return false;
   });
   await page.goto("/#/issues/41");
+  await page.getByRole("button", { name: "날짜별 기록", exact: true }).click();
   await expect(
     page.getByText("리포트 날짜를 불러오지 못했습니다.", { exact: false }),
   ).toBeVisible();
@@ -291,6 +355,7 @@ test("리포트가 하나도 없는 대표 문서는 달력을 모두 비활성�
     return false;
   });
   await page.goto("/#/issues/45");
+  await page.getByRole("button", { name: "날짜별 기록", exact: true }).click();
   await expect(
     page.getByText("이 대표 문서에 저장된 리포트가 없습니다."),
   ).toBeVisible();
