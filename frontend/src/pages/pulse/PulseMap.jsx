@@ -30,6 +30,7 @@ import useMapCamera, {
 } from "./useMapCamera.js";
 
 export default function PulseMap({
+  loading = false,
   scene,
   cameraState,
   selectedKey,
@@ -137,6 +138,11 @@ export default function PulseMap({
       data-zoom={camera.zoom}
       data-theme="neon-pulse"
     >
+      {loading && (
+        <div className="pulse-map-loading" role="status">
+          <span>클러스터와 문서 관계를 불러오는 중입니다.</span>
+        </div>
+      )}
       <div className="document-map__caption">
         <strong>
           {clusters.length}개 이슈{newCount ? ` · ${newCount}개 NEW` : ""}

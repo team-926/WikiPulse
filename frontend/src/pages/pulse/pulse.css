@@ -41,7 +41,28 @@
   font-size: 12px;
 }
 .pulse-layout {
+  position: relative;
   align-items: stretch;
+}
+.pulse-map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  pointer-events: none;
+}
+.pulse-map-loading > span {
+  padding: 12px 16px;
+  border: 1px solid var(--wp-border);
+  border-radius: 8px;
+  background: var(--wp-surface);
+  color: var(--paper);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  word-break: keep-all;
 }
 .pulse-layout[data-has-selection="false"] {
   grid-template-columns: minmax(0, 1fr);
