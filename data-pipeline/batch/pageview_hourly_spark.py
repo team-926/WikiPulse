@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta
 
+from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
@@ -140,9 +141,15 @@ def filter_hours(spark: SparkSession, paths: list[str], candidates: DataFrame,
     ours = ours.withColumn("_ncol", F.size(fields)).withColumn(
         "_canon", jvm_canonical(fields.getItem(1)))
     # 2) 후보와 semi-join. 형식이 틀린 줄은 조인 전에 남겨 파이썬에서 예외가 나게 한다.
+    #    🔴 후보를 **broadcast** 한다. 안 하면 sort-merge join 이 큰 쪽(enwiki 전체 줄,
+    #    시간당 약 190만 행)을 셔플한다 — 1,776시간 한 번에 돌렸을 때 셔플 임시 파일이
+    #    데이터 EC2 디스크를 채워 `No space left on device` 로 죽었고 NameNode 가 안전
+    #    모드에 들어갔다 (2026-09-28). 하루 시범(24시간)은 셔플이 작아 안 드러났다.
+    #    그래서 호출하는 쪽(main)이 **하루씩** 나눠 후보를 작게 유지한다(하루 약 7만 행).
     bad = ours.where(F.col("_ncol") != HOURLY_COLUMNS)
     good = ours.where(F.col("_ncol") == HOURLY_COLUMNS).join(
-        candidates.withColumnRenamed("title", "_canon"), ["ts_hour", "_canon"], "left_semi")
+        F.broadcast(candidates.withColumnRenamed("title", "_canon")),
+        ["ts_hour", "_canon"], "left_semi")
     survivors = good.unionByName(bad).select("path", "ts_hour", "value")
     # 3) 파이썬 정본 규칙으로 다시 판정.
     parsed = survivors.rdd.map(tuple).mapPartitions(_parse_partition(wiki))
@@ -200,8 +207,20 @@ def main(argv: list[str] | None = None) -> int:
              .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
     paths = hour_paths(args.input, args.since, args.until)
-    out = filter_hours(spark, paths, candidates_frame(spark, args.titles), args.wiki)
-    out.write.mode("overwrite").parquet(args.out)
+    # 작은 파일 1,776개라 하루마다 다시 읽으면 목록 조회만 수십 번이다 — 한 번 읽어 둔다.
+    candidates = candidates_frame(spark, args.titles).persist(StorageLevel.MEMORY_AND_DISK)
+    # 하루씩 — 후보 broadcast 를 작게 유지한다 (filter_hours 의 🔴).
+    days = sorted({p.rsplit("pageviews-", 1)[1][:8] for p in paths})
+    first = True
+    for day in days:
+        day_paths = [p for p in paths if p.rsplit("pageviews-", 1)[1][:8] == day]
+        # 파일명 날짜는 윈도우 끝이라 00시 파일은 전날 23시다 — 후보는 경로의 ts_hour 로 거른다.
+        hours = [ts_hour_from_filename(p.rsplit("/", 1)[-1]) for p in day_paths]
+        day_cands = candidates.where(F.col("ts_hour").isin(hours))
+        out = filter_hours(spark, day_paths, day_cands, args.wiki)
+        out.write.mode("overwrite" if first else "append").parquet(args.out)
+        first = False
+        print(f"day {day} files={len(day_paths)} done", flush=True)
     written = spark.read.parquet(args.out)
     stats = written.agg(F.count("*").alias("rows"),
                         F.countDistinct("ts_hour").alias("hours"),
