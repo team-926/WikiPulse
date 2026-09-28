@@ -23,6 +23,7 @@ from spike.detector import (
     Window,
     detect,
     may_spike,
+    z_score,
 )
 
 # --- Strait of Hormuz 조회수 실측 (2025-06, per-article API) ---
@@ -202,6 +203,25 @@ def test_표준편차를_못_내면_배수와_절대량으로_판정한다():
                      view_stddev=None)
     assert detect(Window(1, 1, 5_000), no_sd).status is DecisionStatus.CONFIRMED   # 5배
     assert detect(Window(1, 1, 1_200), no_sd).status is DecisionStatus.REJECTED    # 1.2배
+
+
+def test_표준편차_부동소수점_잔차는_0으로_본다():
+    """WP-231. 평소 값이 완전히 일정하면 2-pass 가중 분산이 정확히 0 이 아니라
+    1.4e-14 같은 잔차를 낸다. ``stddev <= 0`` 만 걸면 그걸로 나눠 z 가 7e13 이 됐다."""
+    assert z_score(101.0, 100.0, 1.4210854715202004e-14) is None
+    assert z_score(3.0, 2.0, 1e-15) is None                 # 편집 평균 < 1 쪽 스케일
+    assert z_score(130.0, 100.0, 10.0) == 3.0               # 정상 변동은 그대로
+
+
+def test_잔차_표준편차면_편집_z_진단값을_싣지_않는다():
+    """판정은 z 없이도 배수·절대량으로 같게 나오지만(z 경로도 배수 2배를 요구),
+    ``spike.edit_z`` 에 7e13 이 저장되면 진단값을 읽는 사람이 그걸 믿는다."""
+    flat = Baseline(edit_ewma=2.0, edit_stddev=1.4e-14, view_ewma=100.0,
+                    sample_days=28, view_stddev=1.4e-14)
+    d = detect(Window(3, 1, 250), flat)
+    assert d.edit_z is None
+    assert d.status is DecisionStatus.CONFIRMED             # 2.5배·250회 — 배수 경로
+    assert detect(Window(3, 1, 150), flat).status is DecisionStatus.REJECTED
 
 
 # ---------------------------------------------------------------- 프리필터
