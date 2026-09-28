@@ -55,7 +55,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .baseline_rows import BASELINE_WINDOW_DAYS
-from .detector import MIN_ABSOLUTE_VIEWS, MIN_VIEW_RATIO, VIEW_Z_THRESHOLD
+from .detector import MIN_ABSOLUTE_VIEWS, MIN_VIEW_RATIO, VIEW_Z_THRESHOLD, z_score
 from .ewma import DEFAULT_HALFLIFE_DAYS, Observation, ewma_mean_std
 from .replay import aggregate, first_detection, read_edit_events, replay_title
 
@@ -199,7 +199,7 @@ def first_view_signal(
 
         views = series[day]
         ratio = views / mean
-        z = None if not stddev or stddev <= 0 else (views - mean) / stddev
+        z = z_score(views, mean, stddev)
         if (z is not None and z >= VIEW_Z_THRESHOLD and ratio >= MIN_VIEW_RATIO
                 and views >= min_absolute_views):
             return ViewSignal(day=day, views=views, baseline_mean=mean, z=z, ratio=ratio)

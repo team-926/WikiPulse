@@ -163,10 +163,30 @@ class SpikeDecision:
         return self.status is DecisionStatus.PENDING_VIEWS
 
 
+#: 표준편차를 "사실상 0" 으로 보는 상대 허용오차 (WP-231).
+#: 평소 값이 완전히 일정한 슬롯도 2-pass 가중 분산은 정확히 0 이 아니라 1e-14 같은
+#: 부동소수점 잔차를 낸다. `stddev <= 0` 만 걸면 그 잔차로 나눠 z 가 7e13 이 되고
+#: z 관문을 통과한다. 평균 대비 이 비율 이하이면 변동이 없는 것으로 본다 — 조회수가
+#: 정수라 실제 변동은 평균의 1e-9 보다 훨씬 크다.
+#: 🔴 기준선(baseline_rows·Spark baseline)에서 자르지 않는다. 두 판이 같은 2-pass 라
+#:    잔차도 같고 test_baseline_spark 가 일치를 고정한다. 여기서 보면 운영 DB 에 이미
+#:    저장된 page_baseline 에도 그대로 적용된다.
+ZERO_STDDEV_REL_TOL = 1e-9
+
+
 def _z(value: float, mean: float, stddev: float | None) -> float | None:
-    if stddev is None or stddev <= 0:
+    if stddev is None or stddev <= ZERO_STDDEV_REL_TOL * max(1.0, abs(mean)):
         return None
     return (value - mean) / stddev
+
+
+def z_score(value: float, mean: float, stddev: float | None) -> float | None:
+    """z. 표준편차가 없거나 사실상 0 이면 None — 판정 불가.
+
+    detector 밖(측정 도구 signal_lag 등)이 같은 규칙을 쓰도록 공개한다. 규칙을 복제하면
+    한쪽만 고쳐졌을 때 측정값이 판정과 조용히 갈린다 (WP-231 이 그 경우였다).
+    """
+    return _z(value, mean, stddev)
 
 
 def may_spike(window: Window) -> bool:
