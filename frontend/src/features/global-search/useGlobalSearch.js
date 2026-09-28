@@ -1,9 +1,14 @@
 import { useCallback } from "react";
 import { dataClient } from "../../data/index.js";
+import { issueHistoryEnabled } from "../../data/historyProduction.js";
 import { useAsyncResource } from "../../data/hooks/useAsyncResource.js";
 
 export function useGlobalSearch(query) {
   const term = query.trim();
+  const historyMode = issueHistoryEnabled(
+    import.meta.env,
+    dataClient.dataSource,
+  );
   const load = useCallback(
     async (signal) => {
       if (!term) return [];
@@ -21,20 +26,29 @@ export function useGlobalSearch(query) {
       });
       signal.throwIfAborted();
       const [issues, stocks] = await Promise.all([
-        dataClient.listIssues({ offset: 0, limit: 100 }, { signal }),
+        historyMode
+          ? dataClient.listIssueHistoryGroups(
+              { q: term, offset: 0, limit: 7 },
+              { signal },
+            )
+          : dataClient.listIssues({ offset: 0, limit: 100 }, { signal }),
         dataClient.listStocks({ q: term, offset: 0, limit: 7 }, { signal }),
       ]);
       const normalized = term.toLowerCase();
+      const matchedIssues = historyMode
+        ? issues.data
+        : issues.data
+            .filter((issue) => issue.label?.toLowerCase().includes(normalized))
+            .slice(0, 7);
       return [
-        ...issues.data
-          .filter((issue) => issue.label.toLowerCase().includes(normalized))
-          .slice(0, 7)
-          .map((issue) => ({
-            kind: "issue",
-            id: issue.id,
-            title: issue.label,
-            detail: `${issue.memberCount}개 문서`,
-          })),
+        ...matchedIssues.map((issue) => ({
+          kind: "issue",
+          id: historyMode ? issue.defaultReportId || issue.id : issue.id,
+          title: issue.label,
+          detail: historyMode
+            ? `${issue.occurrenceCount}개 기록`
+            : `${issue.memberCount}개 문서`,
+        })),
         ...stocks.data.map((stock) => ({
           kind: "stock",
           id: stock.ticker,
@@ -43,7 +57,7 @@ export function useGlobalSearch(query) {
         })),
       ];
     },
-    [term],
+    [term, historyMode],
   );
   return useAsyncResource(load, term);
 }

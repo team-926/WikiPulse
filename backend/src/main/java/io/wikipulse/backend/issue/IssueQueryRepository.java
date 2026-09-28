@@ -1,8 +1,11 @@
 package io.wikipulse.backend.issue;
 
 import io.wikipulse.backend.issue.dto.IssueCardResponse;
+import io.wikipulse.backend.issue.dto.IssueHistoryGroupResponse;
+import io.wikipulse.backend.issue.dto.IssueHistoryReportResponse;
 import io.wikipulse.backend.issue.dto.IssueRankingsResponse;
 import io.wikipulse.backend.issue.dto.IssueMemberResponse;
+import io.wikipulse.backend.issue.dto.IssueReportResponse;
 import io.wikipulse.backend.stock.dto.RelatedStockResponse;
 import java.time.Instant;
 import java.util.List;
@@ -43,6 +46,149 @@ public interface IssueQueryRepository extends JpaRepository<IssueCluster, Long> 
             @Param("from") Instant from,
             @Param("asOf") Instant asOf);
 
+    /** 같은 wiki:문서 제목은 live/replay 를 넘어 한 대표 카드로 묶는다. */
+    @Query(value = """
+            WITH eligible AS (
+                SELECT c.id, c.source, c.issue_key, c.label, c.status,
+                       c.pulse_score, c.snapshot_ts,
+                       CASE WHEN c.issue_key LIKE (c.source || ':_%:_%')
+                            THEN nullif(substr(c.issue_key, length(c.source) + 2), '')
+                       END AS document_key
+                FROM issue_cluster c
+                WHERE c.status <> 'DISCARDED'
+                  AND (CAST(:source AS text) IS NULL OR c.source = CAST(:source AS text))
+                  AND EXISTS (SELECT 1 FROM cluster_snapshot s
+                              WHERE s.source = c.source AND s.snapshot_ts = c.snapshot_ts)
+            ), ranked AS (
+                SELECT e.*,
+                       min(e.snapshot_ts) OVER grouped AS first_seen,
+                       count(*) OVER grouped AS occurrence_count,
+                       row_number() OVER (
+                           PARTITION BY e.document_key,
+                                        CASE WHEN e.document_key IS NULL THEN e.id END
+                           ORDER BY e.snapshot_ts DESC, e.id DESC
+                       ) AS row_number
+                FROM eligible e
+                WINDOW grouped AS (PARTITION BY e.document_key,
+                                   CASE WHEN e.document_key IS NULL THEN e.id END)
+            ), named AS (
+                SELECT r.*, coalesce(nullif(r.label, ''),
+                         (SELECT p.title FROM cluster_member cm
+                          JOIN wiki_page p ON p.id = cm.page_id
+                          WHERE cm.cluster_id = r.id
+                          ORDER BY cm.is_seed DESC, cm.weight DESC, p.id ASC LIMIT 1),
+                         '제목 없음') AS display_label
+                FROM ranked r WHERE r.row_number = 1
+            ), page AS (
+                SELECT * FROM named n
+                WHERE (CAST(:pattern AS text) IS NULL
+                       OR n.display_label ILIKE CAST(:pattern AS text) ESCAPE '!')
+                  AND (CAST(:status AS text) IS NULL OR n.status = CAST(:status AS text))
+                ORDER BY n.snapshot_ts DESC, n.id ASC
+                OFFSET :offset LIMIT :limit
+            )
+            SELECT g.id AS id, g.display_label AS label, g.source AS source,
+                   g.status AS status, g.pulse_score AS pulseScore,
+                   g.snapshot_ts AS snapshotTs, g.first_seen AS firstSeen,
+                   g.occurrence_count AS occurrenceCount,
+                   (SELECT c2.id FROM issue_cluster c2
+                    JOIN issue_report r2 ON r2.cluster_id = c2.id
+                    WHERE c2.status <> 'DISCARDED'
+                      AND (CAST(:source AS text) IS NULL OR c2.source = CAST(:source AS text))
+                      AND ((g.document_key IS NOT NULL
+                            AND c2.issue_key = c2.source || ':' || g.document_key)
+                           OR (g.document_key IS NULL AND c2.id = g.id))
+                      AND EXISTS (SELECT 1 FROM cluster_snapshot s2
+                                  WHERE s2.source = c2.source AND s2.snapshot_ts = c2.snapshot_ts)
+                    ORDER BY CASE WHEN r2.report_sections IS NOT NULL
+                                       AND jsonb_array_length(r2.report_sections) > 0
+                                  THEN 0 ELSE 1 END,
+                             c2.snapshot_ts DESC, c2.id DESC LIMIT 1) AS defaultReportId,
+                   (SELECT r3.summary FROM issue_report r3 WHERE r3.cluster_id = g.id) AS summary,
+                   (SELECT count(*) FROM cluster_member cm WHERE cm.cluster_id = g.id) AS memberCount,
+                   (SELECT count(*) FROM cluster_stock cs
+                    WHERE cs.cluster_id = g.id AND cs.verified) AS stockCount
+            FROM page g
+            ORDER BY g.snapshot_ts DESC, g.id ASC
+            """, nativeQuery = true)
+    List<IssueHistoryGroupResponse.Projection> findHistoryGroups(
+            @Param("pattern") String pattern, @Param("status") String status,
+            @Param("source") String source, @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    @Query(value = """
+            WITH eligible AS (
+                SELECT c.id, c.label, c.status, c.snapshot_ts,
+                       CASE WHEN c.issue_key LIKE (c.source || ':_%:_%')
+                            THEN nullif(substr(c.issue_key, length(c.source) + 2), '')
+                       END AS document_key
+                FROM issue_cluster c
+                WHERE c.status <> 'DISCARDED'
+                  AND (CAST(:source AS text) IS NULL OR c.source = CAST(:source AS text))
+                  AND EXISTS (SELECT 1 FROM cluster_snapshot s
+                              WHERE s.source = c.source AND s.snapshot_ts = c.snapshot_ts)
+            ), latest AS (
+                SELECT DISTINCT ON (e.document_key,
+                                    CASE WHEN e.document_key IS NULL THEN e.id END)
+                       e.id, e.label, e.status
+                FROM eligible e
+                ORDER BY e.document_key,
+                         CASE WHEN e.document_key IS NULL THEN e.id END,
+                         e.snapshot_ts DESC, e.id DESC
+            ), named AS (
+                SELECT l.*, coalesce(nullif(l.label, ''),
+                         (SELECT p.title FROM cluster_member cm
+                          JOIN wiki_page p ON p.id = cm.page_id
+                          WHERE cm.cluster_id = l.id
+                          ORDER BY cm.is_seed DESC, cm.weight DESC, p.id ASC LIMIT 1),
+                         '제목 없음') AS display_label
+                FROM latest l
+            )
+            SELECT count(*) FROM named n
+            WHERE (CAST(:pattern AS text) IS NULL
+                   OR n.display_label ILIKE CAST(:pattern AS text) ESCAPE '!')
+              AND (CAST(:status AS text) IS NULL OR n.status = CAST(:status AS text))
+            """, nativeQuery = true)
+    long countHistoryGroups(@Param("pattern") String pattern,
+                            @Param("status") String status, @Param("source") String source);
+
+    /** 날짜는 프론트에서 KST로 묶는다. 여기서는 리포트 행의 원래 시각을 보존한다. */
+    @Query(value = """
+            SELECT c.id AS id, c.snapshot_ts AS snapshotTs, c.status AS status,
+                   c.pulse_score AS pulseScore, c.source AS source
+            FROM issue_cluster c
+            JOIN issue_report r ON r.cluster_id = c.id
+            WHERE c.status <> 'DISCARDED'
+              AND ((CAST(:issueKey AS text) IS NOT NULL
+                    AND c.issue_key = c.source || ':' || CAST(:issueKey AS text))
+                   OR (CAST(:issueKey AS text) IS NULL
+                       AND c.id = :anchorId AND c.source = :source))
+              AND EXISTS (SELECT 1 FROM cluster_snapshot s
+                          WHERE s.source = c.source AND s.snapshot_ts = c.snapshot_ts)
+            ORDER BY c.snapshot_ts DESC, c.id DESC
+            OFFSET :offset LIMIT :limit
+            """, nativeQuery = true)
+    List<IssueHistoryReportResponse.Projection> findHistoryReports(
+            @Param("anchorId") long anchorId, @Param("issueKey") String issueKey,
+            @Param("source") String source, @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    @Query(value = """
+            SELECT count(*) FROM issue_cluster c
+            JOIN issue_report r ON r.cluster_id = c.id
+            WHERE c.status <> 'DISCARDED'
+              AND ((CAST(:issueKey AS text) IS NOT NULL
+                    AND c.issue_key = c.source || ':' || CAST(:issueKey AS text))
+                   OR (CAST(:issueKey AS text) IS NULL
+                       AND c.id = :anchorId AND c.source = :source))
+              AND EXISTS (SELECT 1 FROM cluster_snapshot s
+                          WHERE s.source = c.source AND s.snapshot_ts = c.snapshot_ts)
+            """, nativeQuery = true)
+    long countHistoryReports(@Param("anchorId") long anchorId,
+                             @Param("issueKey") String issueKey,
+                             @Param("source") String source);
+
+
     /**
      * 이슈 상세의 멤버 문서. weight 내림차순. API 명세 §2.
      *
@@ -76,6 +222,15 @@ public interface IssueQueryRepository extends JpaRepository<IssueCluster, Long> 
     @Query(value = "SELECT model FROM issue_report WHERE cluster_id = :clusterId",
             nativeQuery = true)
     Optional<String> findSummaryModel(@Param("clusterId") Long clusterId);
+
+    /** 섹션형 리포트 (V21, WP-223). 리포트가 없으면 빈 결과. */
+    @Query(value = """
+            SELECT report_sections::text AS sections, report_model AS model,
+                   report_generated_at AS generatedAt
+            FROM issue_report
+            WHERE cluster_id = :clusterId AND report_sections IS NOT NULL
+            """, nativeQuery = true)
+    Optional<IssueReportResponse.Projection> findReport(@Param("clusterId") Long clusterId);
 
     /**
      * 한 이슈의 검증된 관련 종목. verified=true 만.

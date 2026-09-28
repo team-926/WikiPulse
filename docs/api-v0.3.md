@@ -159,16 +159,33 @@ DB `CHECK` 제약과 **같은 값을 그대로** 쓴다. 번역하지 않는다.
         "weight": 1.0, "isSeed": true, "editCount": 87, "views": 12043,
         "completeness": "complete" }
     ],
-    "relatedStocks": [ ]
+    "relatedStocks": [ ],
+    "report": {
+      "status": "ready", "model": "claude-sonnet-4-5-20250929 (report_v1)",
+      "generatedAt": "2026-09-24T05:00:00Z", "snapshotTs": "2026-09-08T04:00:00Z",
+      "sections": [
+        { "id": "overview", "title": "이슈 개요", "body": "…", "evidenceIds": ["901"] }
+      ]
+    }
   }
 }
 ```
 
+- `report`는 섹션형 리포트(`issue_report.report_sections`, V21, WP-223). **저장된 리포트가 없으면 필드째 빠진다** — 프론트는 그때 기존 "근거가 충분하지 않습니다" 상태를 보인다. `evidenceIds`는 이 이슈 멤버의 `pageId`(문자열)다. 지금은 시연 이슈만 일회성 도구(`tools/issue_report_generate.py`)로 채우고 자동 생성 워커는 없다.
 - `summary`는 `issue_report`. 아직 없으면 `null`. 운영 writer와 상태 전이는 WP-119로 구현됐고 EC2에서 실제 GMS 호출도 수행했다. 다만 2026-09-22 재클러스터링 뒤 운영 `issue_report`는 0건이며 summary worker는 꺼져 있다. 과거 로컬 데모 값은 시드에서 생성한 요약이므로 현재 운영 결과로 간주하지 않는다.
 - `members`는 `weight` 내림차순. `isSeed=true`는 최종 급증 관문을 직접 통과한 루트 문서 또는 생성 시각 동시성으로 편입된 새 사건 문서다. `isSeed=false`는 Clickstream 이웃 중 사건기간 편집 재급증 기준을 통과한 기존 문서다. Wikidata 관계는 멤버 편입 사유가 아니다.
 - `members[].editCount/views`는 이 `cluster_id`가 가리키는 스냅샷에서 판정에 사용한 고정값(`cluster_member`)이다. 아직 판정 입력이 없거나 원본이 없어서 `null`일 수 있지만, 최신 원시 테이블 값으로 대체하지 않는다. ~~최신 `page_edit_window`·`page_view_hourly` 한 행을 끌어왔다~~ → 고정값으로 전환 (2026-09-18, WP-129). 과거 스냅샷에 그 뒤의 수치가 붙던 결함이다.
 - `members[].completeness`는 그 `null`이 무슨 뜻인지 말한다 — `complete`(판정 끝) / `pending`(입력 대기) / `unavailable`(원본 없음). 지도 노드와 같은 어휘다. 둘 다 빈칸으로 보이면 사용자는 서비스가 고장 난 줄 안다.
 - `relatedStocks`는 아래 endpoint와 **같은 객체**이며, 상세 진입 시 왕복을 줄이려고 상위 5개만 미리 담는다. 전체는 아래로 부른다.
+
+### 이슈 기록 조회 (읽기 전용)
+
+기존 `GET /api/v1/issues`의 **최신 스냅샷** 계약은 유지한다. 아래 두 경로는 `VITE_ISSUE_HISTORY_ENABLED=true`인 API 빌드의 이슈 탐색에서 사용한다.
+
+- `GET /api/v1/issues/history/groups?q=&status=&source=&offset=&limit=`: 완료·비폐기 클러스터를 `issue_key`의 `출처:` 접두부를 제외한 `wiki:대표 문서 제목`별로 한 건으로 묶어 반환한다. 같은 문서의 `live`/`replay`는 합치되, 키가 없거나 생산 형식이 아닌 행은 ID별 독립 건이다. `q`는 선택적인 대표 제목 부분검색(최대 200자, `%`·`_`·`!`도 일반 문자), `status`는 최신 기록 상태, `source`는 조회 대상을 `live`/`replay`로 제한하는 필터다. 묶음 기준 페이지네이션. 응답 항목은 `id`, `label`, `source`(최신 대표 행의 출처), `status`, `pulseScore`, `snapshotTs`, `firstSeen`, `occurrenceCount`, `defaultReportId`(없으면 null), `summary`, `memberCount`, `stockCount`다. `defaultReportId`는 두 출처를 통틀어 섹션형 본문이 있는 가장 최근 리포트, 없으면 요약만 있는 최근 리포트 ID다.
+- `GET /api/v1/issues/{id}/history/reports?offset=&limit=`: 기준 문서의 두 출처를 통틀어 `issue_report` 행이 있는 시점만 반환한다. 응답 항목은 `id`, `snapshotTs`, `status`, `pulseScore`, `source`이며 최신순이다. 요약만 있어도 포함한다. 상세 본문·멤버·종목은 선택한 ID의 **기존** `GET /issues/{id}`에서 읽는다.
+
+두 경로 모두 기존 `data`/`meta.pagination` 봉투를 사용한다. DB 스키마·적재·기존 피드 API 응답은 바꾸지 않는다. 같은 `wiki:대표 문서 제목`은 같은 문서의 시점 기록이지 현실의 단일 사건임을 보증하지 않는다. 문서 제목이 이동·변경된 이력까지 자동으로 합치지는 않는다.
 
 ### `GET /api/v1/issues/{id}/stocks`
 

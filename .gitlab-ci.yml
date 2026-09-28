@@ -269,6 +269,9 @@ build:frontend:
     #    여기서 빠뜨리면 mock 데이터로 빌드돼 화면이 조용히 가짜가 된다.
     VITE_DATA_SOURCE: api
     VITE_API_BASE_URL: /api/v1
+    # 운영 API·DB 실데이터 검증 후 이슈 탐색의 대표 문서/리포트 날짜 화면을 켠다.
+    # 롤백: false 로 되돌려 develop 재빌드·재배포 (Vite 빌드 시점 플래그).
+    VITE_ISSUE_HISTORY_ENABLED: "true"
   cache:
     key:
       files: [frontend/package-lock.json]

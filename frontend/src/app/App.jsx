@@ -1,5 +1,13 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { readRoute } from "./router";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { readTheme, saveTheme, applyTheme } from "./theme";
+import { isHistoryPreviewRoute, readRoute } from "./router";
 import RouteContent from "./RouteContent";
 import WorkspaceLayout from "./layout/WorkspaceLayout";
 import { PageBoundary, PageSkeleton } from "./layout/PageBoundary";
@@ -9,10 +17,15 @@ import AuthModal from "../features/auth/AuthModal";
 import "../styles/workspace.css";
 const Onboarding = lazy(() => import("../pages/onboarding/OnboardingPage"));
 export default function App() {
+  const [theme, setTheme] = useState(readTheme);
   const [route, setRoute] = useState(readRoute);
   const requestedPath = route.split("?")[0];
   const authRoute = ["/login", "/signup"].includes(requestedPath);
   const pathname = authRoute ? "/pulse" : requestedPath;
+  const localHistoryPreview = isHistoryPreviewRoute(
+    pathname,
+    import.meta.env.DEV,
+  );
   const auth = useAuth();
   const [authMode, setAuthMode] = useState(null);
   const [saveIntent, setSaveIntent] = useState(null);
@@ -32,6 +45,12 @@ export default function App() {
   const mainRef = useRef(null);
   const previousRoute = useRef(route);
   const onboarding = pathname === "/";
+  useLayoutEffect(() => applyTheme(theme, onboarding), [theme, onboarding]);
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    saveTheme(next);
+    setTheme(next);
+  };
   useEffect(() => {
     const update = () => setRoute(readRoute());
     window.addEventListener("hashchange", update);
@@ -74,7 +93,7 @@ export default function App() {
       </PageBoundary>
     );
   const first = pathname.split("/")[1];
-  const active = first;
+  const active = localHistoryPreview ? "issues" : first;
   const mode = authMode || (authRoute ? requestedPath.slice(1) : null);
   const closeAuth = () => {
     setAuthMode(null);
@@ -83,6 +102,8 @@ export default function App() {
   };
   return (
     <WorkspaceLayout
+      theme={theme}
+      onToggleTheme={toggleTheme}
       {...bookmarks}
       active={active}
       member={auth.member}
@@ -92,7 +113,7 @@ export default function App() {
       mainRef={mainRef}
       route={route}
     >
-      {auth.error && (
+      {auth.error && !localHistoryPreview && (
         <div className="wp-page" role="alert">
           {auth.error}{" "}
           <button className="wp-button" onClick={auth.restore}>

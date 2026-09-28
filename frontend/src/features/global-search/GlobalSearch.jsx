@@ -42,6 +42,7 @@ export default function GlobalSearch({ searchRef }) {
       <input
         ref={searchRef}
         value={query}
+        maxLength={200}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);

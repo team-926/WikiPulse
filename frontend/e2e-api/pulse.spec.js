@@ -54,7 +54,7 @@ test("fullscreen keeps timeline and exit usable during loading, errors and empty
   const slider = dialog.getByRole("slider", { name: "스냅샷 시각" });
   await dialog.getByRole("button", { name: "시간축 표시" }).hover();
   await dialog.getByRole("button", { name: "이전 시점" }).click();
-  await expect(dialog.locator(".pulse-loading")).toBeVisible();
+  await expect(dialog.locator(".pulse-map-loading")).toBeVisible();
   await expect(slider).toBeInViewport();
   await expect(
     dialog.getByRole("button", { name: "전체화면 닫기" }),
@@ -89,6 +89,115 @@ test("fullscreen keeps timeline and exit usable during loading, errors and empty
     "hidden",
   );
 });
+for (const { width, expanded } of [
+  { width: 1440, expanded: false },
+  { width: 1440, expanded: true },
+  { width: 390, expanded: false },
+  { width: 390, expanded: true },
+]) {
+  test(`time loading preserves map size, camera and selection at ${width}px ${expanded ? "fullscreen" : "inline"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    await serve(page, async ({ route, url }) => {
+      if (
+        !url.pathname.endsWith("/map") ||
+        url.searchParams.get("snapshotTs") !== pulseMaps.at(-2).meta.snapshotTs
+      )
+        return false;
+      await gate;
+      await route.fulfill({ json: pulseMaps.at(-2) });
+      return true;
+    });
+    await page.goto("/#/pulse");
+    const latest = pulseMaps.at(-1);
+    const selected = latest.data.clusters.find(
+      (cluster) => cluster.issueKey === "winter-olympics",
+    );
+    await page
+      .locator(".pulse-cluster-list button")
+      .filter({ hasText: selected.label })
+      .click();
+    if (expanded) {
+      await page
+        .getByRole("button", { name: "펄스맵 전체화면", exact: true })
+        .click();
+    }
+    const map = page.locator(".document-map");
+    const graph = map.locator(":scope > svg");
+    await page.getByRole("button", { name: "지도 확대", exact: true }).click();
+    await graph.focus();
+    await graph.press("ArrowRight");
+    if (expanded) {
+      await page.getByRole("button", { name: "시간축 표시" }).hover();
+    }
+    const previous = page.getByRole("button", {
+      name: "이전 시점",
+      exact: true,
+    });
+    await previous.scrollIntoViewIfNeeded();
+    const before = await map.boundingBox();
+    const beforeZoom = await map.getAttribute("data-zoom");
+    const beforeTransform = await graph
+      .locator(":scope > g")
+      .evaluate((el) => el.style.transform);
+    const originalGraph = await graph.elementHandle();
+    try {
+      await previous.click();
+      const notice = page.locator(".pulse-map-loading");
+      await expect(notice).toBeVisible();
+      await expect(notice).toHaveText(
+        "클러스터와 문서 관계를 불러오는 중입니다.",
+      );
+      await expect(map).toHaveAttribute(
+        "data-snapshot",
+        latest.meta.snapshotTs,
+      );
+      await expect(map).toHaveAttribute("data-zoom", beforeZoom);
+      await expect(page.locator(".pulse-preview")).toHaveAttribute(
+        "data-snapshot",
+        latest.meta.snapshotTs,
+      );
+      await expect(page.locator(".pulse-preview h2")).toHaveText(
+        selected.label,
+      );
+      await expect(page.locator(".document-node")).toHaveCount(
+        latest.data.clusters.reduce(
+          (sum, cluster) => sum + cluster.nodes.length,
+          0,
+        ),
+      );
+      expect(
+        await graph.evaluate((el, before) => el === before, originalGraph),
+      ).toBe(true);
+      expect(
+        await graph.locator(":scope > g").evaluate((el) => el.style.transform),
+      ).toBe(beforeTransform);
+      const during = await map.boundingBox();
+      expect(during.width).toBeCloseTo(before.width, 1);
+      expect(during.height).toBeCloseTo(before.height, 1);
+      if (expanded) expect(during.y).toBeCloseTo(before.y, 1);
+      const overlay = await notice.boundingBox();
+      expect(overlay.width).toBeCloseTo(during.width, 1);
+      expect(overlay.height).toBeCloseTo(during.height, 1);
+      await map.screenshot({ path: test.info().outputPath("loading-map.png") });
+    } finally {
+      release();
+    }
+    await expect(map).toHaveAttribute(
+      "data-snapshot",
+      pulseMaps.at(-2).meta.snapshotTs,
+    );
+    await expect(page.locator(".pulse-map-loading")).toBeHidden();
+    expect((await map.boundingBox()).height).toBeCloseTo(before.height, 1);
+  });
+}
+
 test("pulse uses the graph contract without downloading catalogue fixtures", async ({
   page,
 }) => {
@@ -229,7 +338,7 @@ test("rapid time changes discard a slower response and preserve graph/panel time
   await expect(page.locator(".pulse-preview h2")).toHaveText(target.label);
   await page.getByRole("button", { name: "이전 시점" }).click();
   await started;
-  await expect(page.locator(".pulse-loading")).toBeVisible();
+  await expect(page.locator(".pulse-map-loading")).toBeVisible();
   await page.getByRole("button", { name: "최신으로 이동" }).click();
   await expect(page.locator(".document-map")).toHaveAttribute(
     "data-snapshot",

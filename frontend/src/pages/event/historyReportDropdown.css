@@ -1,0 +1,79 @@
+.dt-history-dropdown {
+  position: relative;
+}
+.dt-history-trigger[aria-expanded="true"] {
+  color: var(--dt-teal);
+  border-color: var(--dt-teal);
+  background: var(--dt-soft);
+}
+.dt-history-trigger[aria-expanded="true"] > svg:last-child {
+  transform: rotate(180deg);
+}
+.dt-history-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 360px;
+  max-height: min(560px, 70dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--dt-border);
+  border-radius: 12px;
+  background: var(--dt-panel);
+  scrollbar-color: var(--dt-border) var(--dt-panel);
+  scrollbar-width: thin;
+}
+.dt-history-popover .hp-calendar-section {
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  background: transparent;
+}
+.dt-history-popover .dt-section-heading {
+  margin-bottom: 12px;
+}
+.dt-history-popover h2 {
+  font-size: 16px;
+}
+.dt-history-popover p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.dt-history-popover .hp-calendar-heading button {
+  width: 40px;
+  height: 40px;
+}
+.dt-history-popover .hp-calendar-grid {
+  gap: 4px;
+}
+.dt-history-popover .hp-calendar-grid button {
+  min-height: 42px;
+}
+.dt-history-popover .hp-same-day {
+  margin: 16px 0 0;
+}
+.dt-history-popover .hp-same-day strong {
+  flex-basis: 100%;
+}
+.dt-history-popover .hp-same-day a {
+  align-items: center;
+  min-height: 40px;
+}
+@media (max-width: 640px) {
+  .dt-report-actions {
+    position: relative;
+    gap: 8px;
+  }
+  .dt-report-actions .wp-button {
+    gap: 6px;
+    padding-inline: 10px;
+  }
+  .dt-history-dropdown {
+    position: static;
+  }
+  .dt-history-popover {
+    width: min(360px, 100%);
+  }
+}

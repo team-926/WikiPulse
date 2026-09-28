@@ -89,7 +89,9 @@ export default function StockDetail({ symbol, savedStocks, onToggleStock }) {
         />
       </header>
       <p className="st-stock-description">
-        {stock.description || "기업 소개가 제공되지 않았습니다."}
+        {(!isExample && stock.descriptionKo) ||
+          stock.description ||
+          "기업 소개가 제공되지 않았습니다."}
       </p>
       <div className="st-detail-layout">
         <section
@@ -287,7 +289,7 @@ function StockPriceSection({ symbol, from, markers, isExample }) {
         data={points}
         valueKey="price"
         label="종가"
-        color="#86c9c4"
+        color="var(--teal, #86c9c4)"
         height={220}
         markers={markers}
         isExample={false}
