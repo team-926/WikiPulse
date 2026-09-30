@@ -3,6 +3,7 @@
 - 버전: **v0.3 (2026-09-22 정합성 갱신)**
 - v0.3 변경: 1일 실제 원본 E2E 결과와 historical 대표 텍스트·스냅샷 증거·상세 API의 시점 계약을 반영했다.
 - 2026-09-22 정합성 갱신: 운영 배포·DB V14·파이썬 런타임·HDFS/Kafka 상태를 재실측 값으로 교체했다.
+- 2026-09-30 HDFS 갱신: 시간별 조회수 원본 HDFS 적재·Spark 2노드 실작업·HDFS 경로 표(§5)를 반영했다 (WP-233).
 - 상위 문서: [requirements-v0.3.md](requirements-v0.3.md) — **왜 이 컴포넌트가 있는가는 §3.1이 정본이다.** 여기 다시 적지 않는다.
 - 이 문서가 다루는 것: **무엇이 어느 버전으로, 어느 서버 어느 포트에서, 어떻게 뜨는가.**
 - API는 [api-v0.3.md](api-v0.3.md), 데이터 모델은 [erd-v0.1.md](erd-v0.1.md).
@@ -49,9 +50,9 @@
 | --- | --- | --- |
 | PostgreSQL | **17.11** (`pgvector/pgvector:0.8.6-pg17-bookworm`) | 누적 스키마 **V1~V14**가 기본 EC2에 적용됐고 schema version 최댓값 14를 확인했다. Spring Backend가 이 DB에 연결되어 서비스 중이다 (2026-09-22 실측). 테이블별 현재 역할과 상태는 [ERD](erd-v0.1.md)가 정본이다 |
 | pgvector | **0.8.6**, 차원 **1536** 고정 | 같은 이미지 (2026-09-17 실측). `vector(1536)` — `text-embedding-3-small` 기준. 모델을 바꾸면 DDL도 바꿔야 한다 |
-| Hadoop / HDFS | **3.5.0** (`apache/hadoop:3.5.0`) | NameNode 1 + DataNode 2, 복제 2. `/wikipulse`는 논리 약 1.7 GiB·복제 포함 약 3.5 GiB이며 `mediawiki_history`와 `pageview_complete` 원본이 있다. 고정 MVP 2개월 원본은 아직 완성되지 않았다 (2026-09-22 실측) |
-| Spark (EC2) | **3.5.3** (`apache/spark:3.5.3-python3`) | Standalone 2노드, client 모드. 제한 2코어 작업에서 Worker 2대 참여·HDFS Parquet 20행 왕복 통과 (2026-09-17 18:26 KST) |
-| Kafka (EC2) | **3.9.0** (`apache/kafka:3.9.0`) | 추가 EC2 KRaft 단일 broker + controller. `wiki.edits` 3파티션과 EventStreams producer·edit-stream 잡이 기동 상태다 (2026-09-22 실측) |
+| Hadoop / HDFS | **3.5.0** (`apache/hadoop:3.5.0`) | NameNode 1 + DataNode 2, 복제 2. ~~`/wikipulse` 논리 약 1.7 GiB, 고정 2개월 원본 미완성 (2026-09-22)~~ → **고정 2개월 시간별 조회수 원본 2,265파일·126,965,923,156 B 를 `/wikipulse/raw/pageviews_hourly` 로 적재**, 로컬과 md5 전수 일치·`fsck` HEALTHY (2026-09-28, WP-233). 경로 표는 §5. ⚠️ 복제 2·노드 2라 **두 DataNode 가 같은 블록을 한 벌씩** 갖는다 — 용량 분산이 아니라 복제다 |
+| Spark (EC2) | **3.5.3** ~~(`apache/spark:3.5.3-python3`)~~ → **`wikipulse-spark:3.5.3-py311`** (Master·Worker 양쪽, 2026-09-28 확인) | Standalone 2노드, client 모드. ~~제한 2코어 작업에서 Worker 2대 참여·HDFS Parquet 20행 왕복 통과 (2026-09-17 18:26 KST)~~ → 실작업 관통: HDFS 시간별 덤프 1,776시간을 두 Worker 가 처리해 replay 산출물과 5,081,341행 완전 일치, 덤프 읽기 태스크 1,852개 **NODE_LOCAL 100%** (데이터 EC2 1,156 · 서비스 EC2 696). 5시간 6분 — 기존 단일 서버 `zcat \| grep`(약 2.6시간)보다 느리다 (2026-09-28, WP-233 MR !216) |
+| Kafka (EC2) | **3.9.0** (`apache/kafka:3.9.0`) | 추가 EC2 KRaft 단일 broker + controller. `wiki.edits` 3파티션과 EventStreams producer 기동 상태다 (2026-09-22 실측). ~~edit-stream 잡 기동~~ → 추가 EC2 `wikipulse-edit-stream`(공식 이미지·파이썬 3.8)은 Worker 가 3.11 이미지로 바뀐 뒤 2026-09-22 executor 를 잃고 드라이버 포트만 잡은 좀비였다 — **2026-09-28 정지**(삭제 안 함). LIVE 편집 스트림은 기본 EC2 `wikipulse-live-edit-stream` 이 맡는다 |
 | Redis | **채택 여부 미정** | 팀 지침 문서 인프라 절에 이름만 있고 명세 §3.1 컴포넌트 표에는 없다. 지금 필요한 캐시가 무엇인지부터 정할 것 |
 | Nginx / 배포 | Nginx **1.30.5** / GitLab CI | Nginx·Frontend·Spring Backend가 기본 EC2에 배포됐다. HTTPS 루트와 snapshots·map·rankings·stocks API가 모두 200을 반환했다 (2026-09-22 실측). 현재 자동 배포 정본은 `.gitlab-ci.yml`이며 Jenkins는 배포 경로가 아니다 |
 
@@ -219,6 +220,10 @@ docker compose run --rm spark            # 윈도우 집계 잡
 | 처리 실패 의미 | 조회수 미도착=후보 대기, GMS/GDELT 실패=재시도/처리 중, 전체 완료 뒤 통과 종목 없음=정상 0건 | 빈 배열로 장애를 숨기지 않음 |
 | Spark Worker 자원 | 2 코어 · 4 g × 2대. `spark.cores.max 4` · `executor.cores 2` · `executor.memory 2g` | 2026-09-17 기동값 |
 | Spark HDFS 기본 경로 | `/wikipulse/spark` | WP-27 |
+| HDFS 원본 — 시간별 조회수 | `/wikipulse/raw/pageviews_hourly/pageviews-YYYYMMDD-HH0000.gz` (2026-06-19~09-21, 2,265파일) | WP-233. 파일명 시각은 윈도우 **끝**. 데이터 EC2 로컬 캐시(`~/wikipulse-replay-137/cache`)는 md5 검증 뒤 삭제(2026-09-30) — 원본은 이 경로가 유일한 사본이다(복제 2) |
+| HDFS 원본 — 편집·일별 조회수 | `/wikipulse/raw/mediawiki_history` · `/wikipulse/raw/pageview_complete` (`wiki=enwiki` 파티션) | WP-56·57. `/wikipulse/raw/gdelt` 는 빈 폴더 — GKG 백필은 기본 EC2 로컬에 있다 |
+| HDFS replay 입력 | `/wikipulse/replay/candidate-titles/<YYYY-MM-DD>/<HH>.txt` (HH = 윈도우 시작) · `/wikipulse/replay/filtered-v2` (기존 필터 산출물, 대조 기준) | WP-233 |
+| HDFS Spark 산출물·로그 | `/wikipulse/spark/pageviews_filtered` (parquet, 1,776시간·5,081,341행) · `/wikipulse/spark-eventlog` | WP-233. 분석: `tools/spark_eventlog_summary.py` |
 
 ---
 
