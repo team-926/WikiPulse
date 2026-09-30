@@ -218,7 +218,7 @@ docker compose run --rm spark            # 윈도우 집계 잡
 | 멤버 증거 고정 | `edit_count/views/edit_baseline/view_baseline/spike_score/size_score/window_start/end`를 판정 시점에 `cluster_member`로 복사 | API는 최신 원시 지표로 보충하지 않음, 명세 §5.2 |
 | `completeness` | `complete`=최종 조회수 판정 완료, `pending`=입력 대기, `unavailable`=원본 없음 | `view_ratio IS NULL`만으로 판정 금지. 신규 문서 기준선 0 경로도 완료되면 `complete` |
 | 처리 실패 의미 | 조회수 미도착=후보 대기, GMS/GDELT 실패=재시도/처리 중, 전체 완료 뒤 통과 종목 없음=정상 0건 | 빈 배열로 장애를 숨기지 않음 |
-| Spark Worker 자원 | 2 코어 · 4 g × 2대. `spark.cores.max 4` · `executor.cores 2` · `executor.memory 2g` | 2026-09-17 기동값 |
+| Spark Worker 자원 | 2 코어 · 4 g × 2대. `spark.cores.max 4` · `executor.cores 2` · `executor.memory 2g` | 2026-09-17 기동값. ⚠️ **늘리지 않는다** — 데이터 EC2 Worker 를 4코어로 올리자 grep 모드 필터가 60% 느려졌다(태스크당 파이썬·zcat·grep 3프로세스 + 같은 서버 데몬 과다 할당, 2026-09-30 실측, [검증 보고서 §5-2](validation/2026-09-30-spark-pageview-filter.md)) |
 | Spark HDFS 기본 경로 | `/wikipulse/spark` | WP-27 |
 | HDFS 원본 — 시간별 조회수 | `/wikipulse/raw/pageviews_hourly/pageviews-YYYYMMDD-HH0000.gz` (2026-06-19~09-21, 2,265파일) | WP-233. 파일명 시각은 윈도우 **끝**. 데이터 EC2 로컬 캐시(`~/wikipulse-replay-137/cache`)는 md5 검증 뒤 삭제(2026-09-30) — 원본은 이 경로가 유일한 사본이다(복제 2) |
 | HDFS 원본 — 편집·일별 조회수 | `/wikipulse/raw/mediawiki_history` · `/wikipulse/raw/pageview_complete` (`wiki=enwiki` 파티션) | WP-56·57. `/wikipulse/raw/gdelt` 는 빈 폴더 — GKG 백필은 기본 EC2 로컬에 있다 |
