@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from datetime import datetime, timedelta
 
 from pyspark import StorageLevel
@@ -140,6 +141,71 @@ def filter_hours(spark: SparkSession, paths: list[str], candidates: DataFrame,
             .select(F.lit(wiki).alias("wiki"), "title", "ts_hour", "views", "mobile_views"))
 
 
+#: 태스크 안 전처리 — replay 필터(`refilter-fast.py`)의 앞단과 같은 조건.
+GREP_EN = "zcat | LC_ALL=C grep -E '^en(\\.m)? '"
+
+
+def filter_hours_grep(spark: SparkSession, paths: list[str],
+                      titles_by_hour: dict[str, frozenset[str]],
+                      wiki: str = "enwiki") -> DataFrame:
+    """`--mode grep` — 태스크가 HDFS 파일을 통째로 받아 `zcat | grep` 뒤 파이썬 합산.
+
+    벤치(WP-235, 파일 1개 47.7 MB)에서 JVM 경로는 개선 뒤에도 파일당 8~9초가
+    바닥이었고(split·canonical 정규식이 en 줄 206만 개마다), `zcat | grep | aggregate` 는
+    6.0초였다. 그 가장 싼 경로를 **HDFS 블록이 있는 서버의 태스크 안에서** 돌린다.
+
+    * `binaryFiles` 는 파일 단위 입력이라 블록 위치(preferred location)를 그대로 쓴다.
+      gz 는 어차피 분할이 안 되고 파일 하나가 블록 하나(평균 56 MB)다
+    * 합산은 `pageview_hourly.aggregate(titles=…)` 그대로 — `ingest_hour` 와 같은 규칙,
+      형식이 틀린 en 줄은 `parse_row` 가 예외를 던진다
+    * 후보는 시간별 frozenset 을 broadcast 한다(하루 약 7만 제목)
+    """
+    sc = spark.sparkContext
+    titles_bc = sc.broadcast(titles_by_hour)
+
+    def run(items):
+        import subprocess
+        import threading
+
+        from batch.pageview_hourly import aggregate
+
+        for path, data in items:
+            ts = ts_hour_from_filename(path.rsplit("/", 1)[-1])
+            titles = titles_bc.value.get(ts)
+            if not titles:
+                continue                      # 그 시간 후보 파일이 없다 — replay 의 no_titles
+            proc = subprocess.Popen(GREP_EN, shell=True, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+            feeder = threading.Thread(target=_feed, args=(proc.stdin, data), daemon=True)
+            feeder.start()
+            lines = (raw.decode("utf-8", errors="replace") for raw in proc.stdout)
+            rows = list(aggregate(lines, wiki, ts, titles=titles))
+            feeder.join()
+            code = proc.wait()
+            if code not in (0, 1):            # grep 1 = 일치 없음. 그 밖은 실패다
+                raise RuntimeError(f"{GREP_EN} 실패 (exit {code}): {path}")
+            for rec in rows:
+                yield rec.wiki, rec.title, rec.ts_hour, rec.views, rec.mobile_views
+
+    rdd = sc.binaryFiles(",".join(paths), minPartitions=len(paths)).mapPartitions(run)
+    return spark.createDataFrame(rdd, OUTPUT_SCHEMA)
+
+
+def _feed(pipe, data: bytes) -> None:
+    try:
+        pipe.write(data)
+    finally:
+        pipe.close()
+
+
+def titles_by_hour(candidates: DataFrame, hours: list[str]) -> dict[str, frozenset[str]]:
+    """후보 DataFrame → {ts_hour: frozenset(title)}. 드라이버로 모은다(며칠치는 수십만 행)."""
+    grouped: dict[str, set[str]] = {}
+    for row in candidates.where(F.col("ts_hour").isin(hours)).toLocalIterator():
+        grouped.setdefault(row["ts_hour"], set()).add(row["title"])
+    return {ts: frozenset(titles) for ts, titles in grouped.items()}
+
+
 def survivor_lines(spark: SparkSession, paths: list[str], candidates: DataFrame,
                    wiki: str = "enwiki") -> DataFrame:
     """JVM 단계만 — 후보에 걸린 원본 줄 `(path, ts_hour, value)`.
@@ -215,6 +281,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--until", required=True, help="마지막 ts_hour(포함), YYYY-MM-DDTHH")
     p.add_argument("--out", required=True, help="parquet 출력 (hdfs://...)")
     p.add_argument("--wiki", default="enwiki")
+    p.add_argument("--mode", choices=("jvm", "grep"), default="jvm",
+                   help="jvm = DataFrame 필터·조인 / grep = 태스크 안 zcat|grep + aggregate")
     p.add_argument("--days-per-batch", type=int, default=1,
                    help="한 번에 묶어 처리할 날 수 (후보 broadcast 크기와 코어 꼬리의 절충)")
     p.add_argument("--compare-ref", default=None,
@@ -237,17 +305,26 @@ def main(argv: list[str] | None = None) -> int:
     days = sorted({p.rsplit("pageviews-", 1)[1][:8] for p in paths})
     step = max(1, args.days_per_batch)
     first = True
+    loop_started = time.perf_counter()
     for i in range(0, len(days), step):
+        batch_started = time.perf_counter()
         batch_days = set(days[i:i + step])
         batch_paths = [p for p in paths if p.rsplit("pageviews-", 1)[1][:8] in batch_days]
         # 파일명 날짜는 윈도우 끝이라 00시 파일은 전날 23시다 — 후보는 경로의 ts_hour 로 거른다.
         hours = [ts_hour_from_filename(p.rsplit("/", 1)[-1]) for p in batch_paths]
-        batch_cands = candidates.where(F.col("ts_hour").isin(hours))
-        out = filter_hours(spark, batch_paths, batch_cands, args.wiki)
+        if args.mode == "grep":
+            out = filter_hours_grep(spark, batch_paths, titles_by_hour(candidates, hours),
+                                    args.wiki)
+        else:
+            batch_cands = candidates.where(F.col("ts_hour").isin(hours))
+            out = filter_hours(spark, batch_paths, batch_cands, args.wiki)
         out.write.mode("overwrite" if first else "append").parquet(args.out)
         first = False
-        print(f"batch {min(batch_days)}~{max(batch_days)} files={len(batch_paths)} done",
-              flush=True)
+        print(f"batch {min(batch_days)}~{max(batch_days)} files={len(batch_paths)} "
+              f"{time.perf_counter() - batch_started:.1f}s", flush=True)
+    # 처리 구간만 — Spark 기동·후보 읽기·대조는 뺀다. 벤치(WP-235)가 이 값을 쓴다.
+    print(f"process_seconds={time.perf_counter() - loop_started:.1f} files={len(paths)} "
+          f"mode={args.mode}", flush=True)
     written = spark.read.parquet(args.out)
     stats = written.agg(F.count("*").alias("rows"),
                         F.countDistinct("ts_hour").alias("hours"),
