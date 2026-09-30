@@ -32,13 +32,24 @@ from pathlib import Path
 from .baseline_rows import BaselineRow, build_rows
 from .ewma import DEFAULT_HALFLIFE_DAYS
 
-#: 없으면 만들고, 있으면 last_seen 만 건드려 id 를 돌려받는다.
-#: DO NOTHING 을 쓰면 충돌 시 RETURNING 이 비어 id 를 못 받는다 — 그래서 DO UPDATE.
-RESOLVE_PAGE_SQL = """
+#: 이미 있는 문서의 id. **잠금을 걸지 않는다** (WP-234).
+#: ~~`INSERT … ON CONFLICT DO UPDATE SET last_seen = now() RETURNING id`~~ → 폐기.
+#: DO UPDATE 는 이미 있는 행에도 행 잠금을 걸고 트랜잭션 끝까지 쥔다. live-cycle 은 한
+#: 트랜잭션에서 수만 제목을 입력 순서대로, 편집 스트림은 배치 안에서 한 개씩 다른 순서로
+#: 잠가 **서로 반대 순서**가 되면 데드락이다 — 스트림이 하루 약 9번 죽었다(2026-09-23~29
+#: 실측, 재시작 63회). `last_seen` 은 저장소 어디서도 읽지 않는다(V1 정의와 이 upsert 뿐).
+SELECT_PAGE_IDS_SQL = """
+SELECT title, id FROM wiki_page WHERE wiki = %s AND title = ANY(%s)
+"""
+
+#: 없는 문서만 넣는다. **정렬된 순서로** 넣어 모든 호출자의 잠금 순서를 같게 한다 —
+#: 새 제목은 유일 인덱스 삽입 대기가 생기는데, 순서가 같으면 기다릴 뿐 교착되지 않는다.
+#: DO NOTHING 은 충돌 행에 RETURNING 을 안 주므로 넣은 뒤 SELECT 로 다시 받는다
+#: (`cluster/driver.py` `INSERT_PAGES_SQL` 과 같은 방식).
+INSERT_MISSING_PAGES_SQL = """
 INSERT INTO wiki_page (wiki, title)
-VALUES (%s, %s)
-ON CONFLICT (wiki, title) DO UPDATE SET last_seen = now()
-RETURNING id
+SELECT %s, t FROM unnest(%s::text[]) AS t ORDER BY t
+ON CONFLICT (wiki, title) DO NOTHING
 """
 
 UPSERT_BASELINE_SQL = """
@@ -69,12 +80,30 @@ def resolve_page_ids(cur, keys: Iterable[tuple[str, str]]) -> dict[tuple[str, st
     """(wiki, title) 들을 wiki_page.id 로 해석한다. 없으면 만든다.
 
     한 문서가 슬롯 168개를 갖기 때문에 고유 키만 한 번씩 조회한다(캐시).
+
+    세 단계다 (WP-234): ① 있는 id 를 잠금 없이 SELECT ② 없는 것만 정렬 순서로
+    INSERT … DO NOTHING ③ 넣은 것을 다시 SELECT. 잠금은 새 문서를 넣을 때만 생긴다.
     """
-    resolved: dict[tuple[str, str], int] = {}
+    by_wiki: dict[str, list[str]] = {}
     for wiki, title in dict.fromkeys(keys):          # 순서 유지 중복 제거
-        cur.execute(RESOLVE_PAGE_SQL, (wiki, title))
-        resolved[(wiki, title)] = cur.fetchone()[0]
+        by_wiki.setdefault(wiki, []).append(title)
+
+    resolved: dict[tuple[str, str], int] = {}
+    for wiki in sorted(by_wiki):
+        titles = by_wiki[wiki]
+        found = _select_page_ids(cur, wiki, titles)
+        missing = sorted(t for t in titles if t not in found)
+        if missing:
+            cur.execute(INSERT_MISSING_PAGES_SQL, (wiki, missing))
+            found.update(_select_page_ids(cur, wiki, missing))
+        for title in titles:
+            resolved[(wiki, title)] = found[title]
     return resolved
+
+
+def _select_page_ids(cur, wiki: str, titles: list[str]) -> dict[str, int]:
+    cur.execute(SELECT_PAGE_IDS_SQL, (wiki, titles))
+    return {title: page_id for title, page_id in cur.fetchall()}
 
 
 def upsert_rows(cur, rows: Iterable[BaselineRow], page_ids: dict[tuple[str, str], int]) -> int:

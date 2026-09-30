@@ -200,8 +200,9 @@ SELECT_PAGES_BY_TITLE_SQL = """
 SELECT title, id FROM wiki_page WHERE wiki = %s AND title = ANY(%s)
 """
 
-#: 없는 이웃 문서를 등록한다. `spike/baseline_sink.py` 의 `RESOLVE_PAGE_SQL` 과 같은
-#: UPSERT 다 — 자연키가 같으니 규칙도 같아야 한다.
+#: 없는 이웃 문서를 등록한다. `spike/baseline_sink.py` 의 `INSERT_MISSING_PAGES_SQL` 과
+#: 같은 규칙이다 — 자연키가 같으니 규칙도 같아야 한다. (그쪽도 WP-234 로
+#: `DO UPDATE last_seen` 을 버리고 여기와 같은 `DO NOTHING` + 재조회가 됐다.)
 #: ⚠️ `DO NOTHING` 이라 RETURNING 이 충돌 행을 안 준다. 넣고 나서 다시 SELECT 한다
 #: (왕복 2회, 후보 수와 무관). `DO UPDATE last_seen` 으로 바꾸면 이웃 조회가
 #: 기존 문서의 last_seen 을 건드려 "최근 본 문서" 의미가 흐려진다.

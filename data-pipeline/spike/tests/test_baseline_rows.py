@@ -8,7 +8,8 @@ import pytest
 
 from spike.baseline_rows import BASELINE_WINDOW_DAYS, build_rows
 from spike.baseline_sink import (
-    RESOLVE_PAGE_SQL,
+    INSERT_MISSING_PAGES_SQL,
+    SELECT_PAGE_IDS_SQL,
     UPSERT_BASELINE_SQL,
     resolve_page_ids,
     upsert_rows,
@@ -154,14 +155,60 @@ class FakeCursor:
         return (self._next_id,)
 
 
+class FakePageCursor(FakeCursor):
+    """wiki_page 를 흉내 낸다 — SELECT 는 있는 것만, INSERT 는 없는 것만 만든다."""
+
+    def __init__(self, existing: dict[str, int]):
+        super().__init__()
+        self.pages = dict(existing)
+        self._rows: list[tuple[str, int]] = []
+
+    def execute(self, sql, params=None):
+        super().execute(sql, params)
+        _wiki, titles = params
+        if sql is SELECT_PAGE_IDS_SQL:
+            self._rows = [(t, self.pages[t]) for t in titles if t in self.pages]
+        elif sql is INSERT_MISSING_PAGES_SQL:
+            for t in sorted(titles):
+                self._next_id += 1
+                self.pages.setdefault(t, self._next_id)
+
+    def fetchall(self):
+        return self._rows
+
+
 def test_page_id_해석은_고유키당_한_번():
-    cur = FakeCursor()
+    cur = FakePageCursor({"Iran": 7})
     keys = [("enwiki", "Iran")] * 24 + [("enwiki", "Milton")]
     resolved = resolve_page_ids(cur, keys)
-    assert len(cur.calls) == 2                      # 24번이 아니라 고유 2번
+    # SELECT 1 · 없는 Milton 만 INSERT 1 · 넣은 것 SELECT 1 — 24번이 아니다
+    assert [sql for sql, _ in cur.calls] == [
+        SELECT_PAGE_IDS_SQL, INSERT_MISSING_PAGES_SQL, SELECT_PAGE_IDS_SQL]
+    assert cur.calls[0][1] == ("enwiki", ["Iran", "Milton"])
+    assert cur.calls[1][1] == ("enwiki", ["Milton"])
+    assert resolved[("enwiki", "Iran")] == 7
     assert set(resolved) == {("enwiki", "Iran"), ("enwiki", "Milton")}
-    assert "ON CONFLICT (wiki, title) DO UPDATE" in RESOLVE_PAGE_SQL
-    assert "RETURNING id" in RESOLVE_PAGE_SQL       # DO NOTHING 이면 id 를 못 받는다
+
+
+def test_이미_있는_문서만이면_INSERT_하지_않는다():
+    """WP-234. 있는 문서에 쓰기(잠금)를 하지 않는 게 데드락 수정의 핵심이다."""
+    cur = FakePageCursor({"Iran": 7, "Milton": 8})
+    resolve_page_ids(cur, [("enwiki", "Milton"), ("enwiki", "Iran")])
+    assert [sql for sql, _ in cur.calls] == [SELECT_PAGE_IDS_SQL]
+
+
+def test_새_문서는_정렬된_순서로_넣는다():
+    """호출자마다 입력 순서가 달라도 잠금(삽입) 순서가 같아야 교착이 안 난다."""
+    cur = FakePageCursor({})
+    resolve_page_ids(cur, [("enwiki", "Zeta"), ("enwiki", "Alpha"), ("enwiki", "Mid")])
+    assert cur.calls[1] == (INSERT_MISSING_PAGES_SQL, ("enwiki", ["Alpha", "Mid", "Zeta"]))
+    assert "ORDER BY t" in INSERT_MISSING_PAGES_SQL
+
+
+def test_upsert_SQL이_기존_행을_잠그지_않는다():
+    assert "DO NOTHING" in INSERT_MISSING_PAGES_SQL
+    assert "DO UPDATE" not in INSERT_MISSING_PAGES_SQL
+    assert "FOR UPDATE" not in SELECT_PAGE_IDS_SQL
 
 
 def test_upsert는_PK충돌시_갱신():
