@@ -129,6 +129,25 @@ def _parse_partition(wiki: str):
 def filter_hours(spark: SparkSession, paths: list[str], candidates: DataFrame,
                  wiki: str = "enwiki") -> DataFrame:
     """시간별 덤프 경로 → 후보만 남긴 (wiki, title, ts_hour, views, mobile_views)."""
+    survivors = survivor_lines(spark, paths, candidates, wiki)
+    # 3) 파이썬 정본 규칙으로 다시 판정.
+    parsed = survivors.rdd.map(tuple).mapPartitions(_parse_partition(wiki))
+    rows = spark.createDataFrame(parsed, "ts_hour string, title string, views long, "
+                                         "mobile long")
+    # 4) 합산. 데스크톱·모바일 두 행이 한 문서다.
+    return (rows.groupBy("ts_hour", "title")
+            .agg(F.sum("views").alias("views"), F.sum("mobile").alias("mobile_views"))
+            .select(F.lit(wiki).alias("wiki"), "title", "ts_hour", "views", "mobile_views"))
+
+
+def survivor_lines(spark: SparkSession, paths: list[str], candidates: DataFrame,
+                   wiki: str = "enwiki") -> DataFrame:
+    """JVM 단계만 — 후보에 걸린 원본 줄 `(path, ts_hour, value)`.
+
+    파이썬으로 넘어가기 전 경계다. 따로 둔 이유: 파이썬 RDD 경계에서 실행 계획이 끊겨
+    `filter_hours(...).explain()` 에는 이 앞단이 안 보인다 — 벤치(WP-235)가 이걸
+    따로 세고 explain 한다.
+    """
     projects = sorted(projects_for(wiki))
     lines = (spark.read.text(paths)
              .withColumn("path", F.input_file_name())
@@ -150,15 +169,7 @@ def filter_hours(spark: SparkSession, paths: list[str], candidates: DataFrame,
     good = ours.where(F.col("_ncol") == HOURLY_COLUMNS).join(
         F.broadcast(candidates.withColumnRenamed("title", "_canon")),
         ["ts_hour", "_canon"], "left_semi")
-    survivors = good.unionByName(bad).select("path", "ts_hour", "value")
-    # 3) 파이썬 정본 규칙으로 다시 판정.
-    parsed = survivors.rdd.map(tuple).mapPartitions(_parse_partition(wiki))
-    rows = spark.createDataFrame(parsed, "ts_hour string, title string, views long, "
-                                         "mobile long")
-    # 4) 합산. 데스크톱·모바일 두 행이 한 문서다.
-    return (rows.groupBy("ts_hour", "title")
-            .agg(F.sum("views").alias("views"), F.sum("mobile").alias("mobile_views"))
-            .select(F.lit(wiki).alias("wiki"), "title", "ts_hour", "views", "mobile_views"))
+    return good.unionByName(bad).select("path", "ts_hour", "value")
 
 
 def compare(spark: SparkSession, out: DataFrame, ref_root: str,
