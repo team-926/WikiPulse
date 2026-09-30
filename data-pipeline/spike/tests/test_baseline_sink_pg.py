@@ -23,7 +23,7 @@ from datetime import date
 import pytest
 
 from spike.baseline_rows import build_rows
-from spike.baseline_sink import load
+from spike.baseline_sink import load, resolve_page_ids
 
 psycopg = pytest.importorskip("psycopg", reason="psycopg 미설치 — 이 파일은 건너뛴다")
 
@@ -125,3 +125,50 @@ def test_edit_stddev_None이_NULL로_들어간다(conn, title):
     stored = read_row(conn, title)
     assert stored[1] == pytest.approx(0.0)     # edit_stddev (관측 1개 → 0)
     assert stored[2] is None                   # view_ewma NULL
+
+
+# ---------------------------------------------------------------- wiki_page 해석 (WP-234)
+
+@pytest.fixture()
+def titles(conn):
+    """고유 문서 세 개. 끝나면 지운다."""
+    names = [f"__pytest_{uuid.uuid4().hex[:12]}_{i}" for i in range(3)]
+    yield names
+    conn.rollback()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM wiki_page WHERE wiki = %s AND title = ANY(%s)",
+                    ("enwiki", names))
+    conn.commit()
+
+
+def test_있는_문서와_새_문서가_섞여도_id를_모두_돌려준다(conn, titles):
+    a, b, c = titles
+    with conn.cursor() as cur:
+        first = resolve_page_ids(cur, [("enwiki", a)])
+        both = resolve_page_ids(cur, [("enwiki", b), ("enwiki", a), ("enwiki", b),
+                                      ("enwiki", c)])
+    conn.commit()
+    assert both[("enwiki", a)] == first[("enwiki", a)]       # 기존 id 그대로
+    assert len({both[("enwiki", t)] for t in titles}) == 3   # 새 두 개도 각자 id
+    with conn.cursor() as cur:
+        assert resolve_page_ids(cur, []) == {}
+
+
+def test_이미_있는_문서는_다른_트랜잭션을_막지_않는다(conn, titles):
+    """WP-234 의 핵심. ~~DO UPDATE SET last_seen~~ 이면 T1 이 쥔 행 잠금 때문에
+    T2 가 lock_timeout 으로 죽었다 — 운영에서는 서로 반대 순서라 데드락이 됐다."""
+    a, b, _ = titles
+    with conn.cursor() as cur:                                # 미리 만들어 둔다
+        resolve_page_ids(cur, [("enwiki", a), ("enwiki", b)])
+    conn.commit()
+
+    dsn = os.environ.get("DATABASE_URL") or DEFAULT_DSN
+    with psycopg.connect(dsn, connect_timeout=5) as other:
+        with conn.cursor() as t1:                             # T1: a → b, 커밋 안 함
+            resolve_page_ids(t1, [("enwiki", a), ("enwiki", b)])
+        with other.cursor() as t2:                            # T2: b → a (반대 순서)
+            t2.execute("SET lock_timeout = '2s'")
+            got = resolve_page_ids(t2, [("enwiki", b), ("enwiki", a)])
+        other.rollback()
+    conn.rollback()
+    assert set(got) == {("enwiki", a), ("enwiki", b)}
