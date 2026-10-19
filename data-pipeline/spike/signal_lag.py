@@ -68,7 +68,7 @@ AQS_URL = (
 )
 
 #: 위키미디어는 User-Agent 없는 요청을 막는다. 연락처를 넣는 게 그쪽 정책이다.
-USER_AGENT = "WikiPulse/0.1 (WP; https://github.com/team-WikiPulse/WikiPulse)"
+USER_AGENT = "WikiPulse/0.1 (WP; https://github.com/team-926/WikiPulse)"
 
 #: 응답 캐시. 같은 문서를 두 번 부르지 않는다.
 CACHE_DIR = Path("data/cache/pageviews")

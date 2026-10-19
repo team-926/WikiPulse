@@ -15,7 +15,7 @@
 저장소. **클론이 없는 PC면 먼저 받는다** — HTTPS 라 GitLab 계정으로 로그인한다.
 
 ```
-git clone https://github.com/team-WikiPulse/WikiPulse.git
+git clone https://github.com/team-926/WikiPulse.git
 cd WP
 ```
 
